@@ -8,6 +8,7 @@ Based on Ollama, a Graphical User Interface for Loc al Large Language Model Conv
 import base64
 import importlib.metadata
 import shutil
+import stat
 import sys
 
 import json
@@ -134,12 +135,19 @@ class ChatThread(QThread):
                 # 对文档进行分割和处理
                 text_splitter = RecursiveCharacterTextSplitter(chunk_size=7500, chunk_overlap=100)
                 chunks = text_splitter.split_documents(data)
-                
-                persist_directory = "./chroma_db"
+                # file_name = os.path.basename(self.path)
+                # file_name = os.path.splitext(os.path.basename(self.path))[0]
+                persist_directory = self.path+"chroma_db"
 
-                # 如果目录存在，删除它
+                # 定义一个函数来处理无法删除的文件
+                def remove_readonly(func, path, _):
+                    os.chmod(path, stat.S_IWRITE)
+                    func(path)
+                    
+                # 如果目录存在，强制删除它
                 if os.path.exists(persist_directory):
-                    shutil.rmtree(persist_directory)
+                    shutil.rmtree(persist_directory, onerror=remove_readonly)
+
 
                 # 创建向量数据库 需要改进 2024年12月18日
                 vector_db = Chroma.from_documents(
@@ -196,8 +204,8 @@ class ChatThread(QThread):
                 # 对文档进行分割和处理
                 text_splitter = RecursiveCharacterTextSplitter(chunk_size=7500, chunk_overlap=100)
                 chunks = text_splitter.split_documents(data)
-                
-                persist_directory = "./chroma_db"
+
+                persist_directory = self.path+"chroma_db"
 
                 # 创建向量数据库
                 vector_db = Chroma.from_documents(
@@ -499,7 +507,7 @@ class ChatLocalAndPersistent(QMainWindow):
     def importFile(self):
 
 
-        file_path, _ = QFileDialog.getOpenFileName(self, 'Import File', '', 'Image (*.jpg *.png *.jpeg);;Document (*.pdf *.doc *.docx);;Datasheet (*.csv *.xls *.xlsx);;All Files (*)')
+        file_path, _ = QFileDialog.getOpenFileName(self, 'Import File', '', 'Document (*.pdf *.doc *.docx);;Datasheet (*.csv *.xls *.xlsx);;Image (*.jpg *.png *.jpeg);;All Files (*)')
         
         # 检查文件路径是否为空
         if file_path != '':
