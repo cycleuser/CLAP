@@ -136,7 +136,7 @@ class ChatThread(QThread):
                 
                 persist_directory = "./chroma_db"
 
-                # 创建向量数据库
+                # 创建向量数据库 需要改进 2024年12月18日
                 vector_db = Chroma.from_documents(
                     documents=chunks,
                     embedding=OllamaEmbeddings(model="mxbai-embed-large"),
