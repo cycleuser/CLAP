@@ -38,9 +38,15 @@ requires = [
     "langchain_community",
     "langchain_ollama",
     "langchain_core",
+    "langchain-groq",
     "langchain_text_splitters",
     "unstructured",
-    "pdfminer"
+    "unstructured[pdf]",
+    "pdfminer.six",
+    "faiss-cpu",
+    "nltk",
+    "pi_heif",
+    "python-dotenv",
 ]
 test_requires = [    "pytest",]
 

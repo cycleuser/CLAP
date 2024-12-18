@@ -23,9 +23,19 @@ mammoth
 # chromadb is for data storage and retrieval and may be replaced in the future.
 chromadb
 # langchain_community is a library for the Python programming language that provides a set of tools for working with natural language data.
+
+# streamlit
+# transformers
+# sentence-transformers
 langchain_community
 langchain_ollama
 langchain_core
+langchain-groq
 langchain_text_splitters
 unstructured
-pdfminer
+unstructured[pdf]
+pdfminer.six
+faiss-cpu
+nltk
+pi_heif
+python-dotenv
