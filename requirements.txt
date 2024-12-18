@@ -1,3 +1,5 @@
+beeware
+briefcase    
 # PySide6 is a set of Python bindings for The Qt Company’s Qt application framework and runs on all platforms supported by Qt including Windows macOS Linux iOS and Android.
 PySide6
 # chardet is a universal character encoding detector.
