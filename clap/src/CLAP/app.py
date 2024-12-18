@@ -7,6 +7,7 @@ Based on Ollama, a Graphical User Interface for Loc al Large Language Model Conv
 """
 import base64
 import importlib.metadata
+import shutil
 import sys
 
 import json
@@ -135,6 +136,10 @@ class ChatThread(QThread):
                 chunks = text_splitter.split_documents(data)
                 
                 persist_directory = "./chroma_db"
+
+                # 如果目录存在，删除它
+                if os.path.exists(persist_directory):
+                    shutil.rmtree(persist_directory)
 
                 # 创建向量数据库 需要改进 2024年12月18日
                 vector_db = Chroma.from_documents(
