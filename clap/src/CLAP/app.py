@@ -65,7 +65,7 @@ from PySide6.QtCore import QAbstractTableModel, Qt, QModelIndex
 
 from scipy.stats import gmean
 from langchain_community.document_loaders import UnstructuredPDFLoader, UnstructuredWordDocumentLoader
-from IPython.display import display as Markdown
+# from IPython.display import display as Markdown
 from tqdm.autonotebook import tqdm as notebook_tqdm
 from langchain_ollama import OllamaEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
