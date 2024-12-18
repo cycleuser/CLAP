@@ -87,7 +87,8 @@ git clone https://github.com/EasyCam/CLAP.git
 cd CLAP
 pip insall -r requirements.txt
 cd clap
-briefcase dev
+python src\CLAP\app.py
+# Or briefcase dev
 ```
 
 # 4 Interface
