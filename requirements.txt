@@ -24,3 +24,6 @@ mammoth
 chromadb
 # langchain_community is a library for the Python programming language that provides a set of tools for working with natural language data.
 langchain_community
+langchain_ollama
+langchain_core
+langchain_text_splitters

@@ -36,6 +36,9 @@ requires = [
     "mammoth",
     "chromadb",
     "langchain_community",
+    "langchain_ollama",
+    "langchain_core",
+    "langchain_text_splitters"
 ]
 test_requires = [    "pytest",]
 
