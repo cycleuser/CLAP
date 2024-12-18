@@ -505,10 +505,8 @@ class ChatLocalAndPersistent(QMainWindow):
 
 
     def importFile(self):
-
-
+        self.newChat()
         file_path, _ = QFileDialog.getOpenFileName(self, 'Import File', '', 'Document (*.pdf *.doc *.docx);;Datasheet (*.csv *.xls *.xlsx);;Image (*.jpg *.png *.jpeg);;All Files (*)')
-        
         # 检查文件路径是否为空
         if file_path != '':
             self.file_loaded_path = file_path
