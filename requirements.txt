@@ -1,0 +1,22 @@
+# PySide6 is a set of Python bindings for The Qt Company’s Qt application framework and runs on all platforms supported by Qt including Windows macOS Linux iOS and Android.
+PySide6
+# chardet is a universal character encoding detector.
+chardet
+# requests is a simple yet elegant HTTP library.
+requests
+# ollama is not a common library please check its documentation for more details.
+ollama
+# mistune is a markdown parser in pure Python with renderer features.
+mistune
+# matplotlib is a plotting library for the Python programming language and its numerical mathematics extension NumPy.
+matplotlib
+# numpy is a library for the Python programming language adding support for large multi-dimensional arrays and matrices along with a large collection of high-level mathematical functions to operate on these arrays.
+numpy
+# scipy is a free and open-source Python library used for scientific computing and technical computing.
+scipy
+# pandas is a software library written for the Python programming language for data manipulation and analysis.
+pandas
+# langchain is a library for the Python programming language that provides a set of tools for working with natural language data.
+langchain
+# mammoth is a library for the Python programming language that converts .docx documents to HTML and Markdown.
+mammoth
