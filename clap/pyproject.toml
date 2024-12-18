@@ -38,7 +38,9 @@ requires = [
     "langchain_community",
     "langchain_ollama",
     "langchain_core",
-    "langchain_text_splitters"
+    "langchain_text_splitters",
+    "unstructured",
+    "pdfminer"
 ]
 test_requires = [    "pytest",]
 
