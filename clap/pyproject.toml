@@ -34,7 +34,8 @@ requires = [
     "PySide6-Essentials",
     "langchain",
     "mammoth",
-    "chromadb"
+    "chromadb",
+    "langchain_community",
 ]
 test_requires = [    "pytest",]
 
