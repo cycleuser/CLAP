@@ -20,3 +20,5 @@ pandas
 langchain
 # mammoth is a library for the Python programming language that converts .docx documents to HTML and Markdown.
 mammoth
+# chromadb is for data storage and retrieval and may be replaced in the future.
+chromadb

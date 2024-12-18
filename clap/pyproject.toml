@@ -33,7 +33,8 @@ requires = [
     "pandas",
     "PySide6-Essentials",
     "langchain",
-    "mammoth"
+    "mammoth",
+    "chromadb"
 ]
 test_requires = [    "pytest",]
 
