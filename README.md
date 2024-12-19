@@ -83,7 +83,7 @@ Suitable for all OS users, especially GNU/Linux users, requiring Python 3.10+ an
 Clone the repository and install dependencies, then run the application. 
 The commands are as follows:
 ```bash
-git clone https://github.com/EasyCam/CLAP.git
+git clone https://github.com/cycleuser/CLAP.git
 cd CLAP
 pip insall -r requirements.txt
 cd clap
