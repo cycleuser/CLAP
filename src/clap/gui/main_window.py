@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QUrl
-from PySide6.QtGui import QAction, QKeySequence
+from PySide6.QtGui import QAction, QKeySequence, QPixmap
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import (
     QApplication,
@@ -98,6 +98,12 @@ class MainWindow(QMainWindow):
             self.pdf_viewer.settings().WebAttribute.PdfViewerEnabled, True
         )
         layout.addWidget(self.pdf_viewer, 1)
+
+        self.image_label = QLabel()
+        self.image_label.setAlignment(Qt.AlignCenter)
+        self.image_label.setScaledContents(False)
+        self.image_label.hide()
+        layout.addWidget(self.image_label, 1)
 
         self.doc_label = QLabel(t("no_document"))
         self.doc_label.setAlignment(Qt.AlignCenter)
@@ -274,7 +280,12 @@ class MainWindow(QMainWindow):
     def open_document(self):
         """Open a document."""
         path, _ = QFileDialog.getOpenFileName(
-            self, t("open_document"), "", "Documents (*.pdf *.doc *.docx *.txt);;All Files (*)"
+            self,
+            t("open_document"),
+            "",
+            "Documents (*.pdf *.doc *.docx *.md *.markdown *.txt);;"
+            "Images (*.png *.jpg *.jpeg *.gif *.bmp *.webp *.svg);;"
+            "All Files (*)",
         )
         if path:
             self.load_document(path)
@@ -282,14 +293,47 @@ class MainWindow(QMainWindow):
     def load_document(self, path: str):
         """Load a document."""
         self.current_file = path
-        self.doc_label.hide()
+        self._hide_all_viewers()
 
         if path.lower().endswith(".pdf"):
+            self.pdf_viewer.show()
             self.pdf_viewer.load(QUrl.fromLocalFile(path))
+            self._index_document(path)
+        elif path.lower().endswith((".md", ".markdown")):
+            self.pdf_viewer.show()
+            self._load_markdown_viewer(path)
+            self._index_document(path)
+        elif path.lower().endswith(".svg"):
+            self.pdf_viewer.show()
+            self._load_svg_viewer(path)
+            self.status_bar.showMessage(f"{t('loaded')}: {os.path.basename(path)}")
+        elif path.lower().endswith((".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp")):
+            self._load_image_viewer(path)
+            self.status_bar.showMessage(f"{t('loaded')}: {os.path.basename(path)}")
         else:
             self.doc_label.setText(os.path.basename(path))
             self.doc_label.show()
+            self._index_document(path)
 
+    def _hide_all_viewers(self):
+        """Hide all document viewers."""
+        self.pdf_viewer.hide()
+        self.image_label.hide()
+        self.doc_label.hide()
+
+    def _load_image_viewer(self, path: str):
+        """Load and display an image file."""
+        pixmap = QPixmap(path)
+        if pixmap.isNull():
+            self.doc_label.setText(f"{t('error')}: {os.path.basename(path)}")
+            self.doc_label.show()
+            return
+
+        self.image_label.setPixmap(pixmap)
+        self.image_label.show()
+
+    def _index_document(self, path: str):
+        """Index a document into knowledge base."""
         self.status_bar.showMessage(t("indexing"))
         self.knowledge_base = KnowledgeBase(
             persist_directory=self.config.persist_directory, embedding_model=self.config.embed_model
@@ -306,6 +350,28 @@ class MainWindow(QMainWindow):
             )
         else:
             self.status_bar.showMessage(f"{t('error')}: {result.get('error', 'Unknown')}")
+
+    def _load_markdown_viewer(self, path: str):
+        """Load and display markdown file as HTML."""
+        try:
+            with open(path, encoding="utf-8") as f:
+                content = f.read()
+            html = self._markdown(content)
+            self.pdf_viewer.setHtml(html)
+        except Exception:
+            self.doc_label.setText(os.path.basename(path))
+            self.doc_label.show()
+
+    def _load_svg_viewer(self, path: str):
+        """Load and display SVG file."""
+        try:
+            with open(path, encoding="utf-8") as f:
+                svg_content = f.read()
+            html = f"<!DOCTYPE html><html><head><style>body{{margin:0;padding:20px;display:flex;justify-content:center;align-items:center;min-height:100vh;}}</style></head><body>{svg_content}</body></html>"
+            self.pdf_viewer.setHtml(html)
+        except Exception:
+            self.doc_label.setText(os.path.basename(path))
+            self.doc_label.show()
 
     def new_chat(self):
         """Start a new chat session."""

@@ -9,7 +9,7 @@ from pathlib import Path
 class CLAPConfig:
     """CLAP configuration settings."""
 
-    chat_model: str = "gemma3:1b"
+    chat_model: str = "gemma3:4b"
     embed_model: str = "nomic-embed-text:latest"
     font_size: int = 12
     chunk_size: int = 2000

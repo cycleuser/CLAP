@@ -1,9 +1,11 @@
 """Chat thread for handling asynchronous LLM communication."""
 
+import io
+
 import ollama
 from PySide6.QtCore import QThread, Signal
 
-from clap.core.document import chunk_text, is_image, load_document
+from clap.core.document import chunk_text, is_image, is_svg, load_document
 
 
 class ChatThread(QThread):
@@ -29,6 +31,8 @@ class ChatThread(QThread):
         try:
             if self.path and is_image(self.path):
                 self._process_image()
+            elif self.path and is_svg(self.path):
+                self._process_svg()
             elif self.path:
                 self._process_document()
             else:
@@ -45,6 +49,75 @@ class ChatThread(QThread):
             model=self.model, prompt=self.messages[-1]["content"], images=[image_data], stream=True
         ):
             self.new_text.emit(chunk.get("response", ""))
+
+    def _process_svg(self):
+        """Process SVG with vision model by rendering to PNG."""
+        docs = load_document(self.path)
+        if not docs:
+            self._process_chat()
+            return
+
+        doc = docs[0]
+        svg_content = doc.metadata.get("raw_svg", "")
+        extracted_text = doc.content
+
+        try:
+            image_data = self._render_svg_to_png(svg_content)
+            if image_data:
+                prompt = self.messages[-1]["content"]
+                if extracted_text:
+                    prompt = f"[SVG contains text: {extracted_text}]\n\n{prompt}"
+                for chunk in ollama.generate(
+                    model=self.model, prompt=prompt, images=[image_data], stream=True
+                ):
+                    self.new_text.emit(chunk.get("response", ""))
+            else:
+                if extracted_text:
+                    prompt = f"[SVG file content]\nText extracted: {extracted_text}\n\nQuestion: {self.messages[-1]['content']}"
+                    for chunk in ollama.chat(
+                        model=self.model, messages=[{"role": "user", "content": prompt}], stream=True
+                    ):
+                        self.new_text.emit(chunk["message"]["content"])
+                else:
+                    self._process_chat()
+        except Exception:
+            self._process_chat()
+
+    def _render_svg_to_png(self, svg_content: str) -> bytes | None:
+        """Render SVG content to PNG bytes using CairoSVG or Qt."""
+        try:
+            import cairosvg
+
+            png_data = cairosvg.svg2png(bytestring=svg_content.encode("utf-8"))
+            return png_data
+        except ImportError:
+            pass
+        except Exception:
+            pass
+
+        try:
+            from PySide6.QtGui import QImage, QPainter
+            from PySide6.QtSvg import QSvgRenderer
+
+            renderer = QSvgRenderer(svg_content.encode("utf-8"))
+            if not renderer.isValid():
+                return None
+
+            size = renderer.defaultSize()
+            if size.width() > 2048 or size.height() > 2048:
+                size = size.scaled(2048, 2048, 1)
+
+            image = QImage(size, QImage.Format_ARGB32)
+            image.fill(0xFFFFFFFF)
+            painter = QPainter(image)
+            renderer.render(painter)
+            painter.end()
+
+            buffer = io.BytesIO()
+            image.save(buffer, "PNG")
+            return buffer.getvalue()
+        except Exception:
+            return None
 
     def _process_document(self):
         """Process document with RAG."""
