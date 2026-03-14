@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CLAP - Chat Local And Persistent</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: #f5f5f5;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            background-color: #2c3e50;
+            color: white;
+            padding: 15px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .header h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+
+        .model-selector {
+            padding: 8px 12px;
+            border-radius: 6px;
+            border: 1px solid #34495e;
+            background-color: #34495e;
+            color: white;
+            font-size: 14px;
+        }
+
+        .main-container {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        .sidebar {
+            width: 300px;
+            background-color: #2c3e50;
+            color: white;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .sidebar h3 {
+            margin-bottom: 15px;
+            font-size: 14px;
+            text-transform: uppercase;
+            color: #95a5a6;
+        }
+
+        .kb-stats {
+            background-color: #34495e;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+
+        .kb-stat {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .chat-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .chat-messages {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            background-color: white;
+        }
+
+        .message {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 12px;
+        }
+
+        .message.user {
+            flex-direction: row-reverse;
+        }
+
+        .avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            flex-shrink: 0;
+        }
+
+        .avatar.user {
+            background-color: #3498db;
+            color: white;
+        }
+
+        .avatar.ai {
+            background-color: #2ecc71;
+            color: white;
+        }
+
+        .message-content {
+            max-width: 70%;
+            padding: 12px 16px;
+            border-radius: 12px;
+            background-color: #f0f0f0;
+            line-height: 1.5;
+        }
+
+        .message.user .message-content {
+            background-color: #3498db;
+            color: white;
+        }
+
+        .chat-input-container {
+            padding: 20px;
+            background-color: #f5f5f5;
+            border-top: 1px solid #e0e0e0;
+        }
+
+        .chat-input-wrapper {
+            display: flex;
+            gap: 10px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .chat-input {
+            flex: 1;
+            padding: 12px 16px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+            resize: none;
+            min-height: 50px;
+            max-height: 150px;
+        }
+
+        .send-button {
+            padding: 12px 24px;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: background-color 0.2s;
+        }
+
+        .send-button:hover {
+            background-color: #2980b9;
+        }
+
+        .send-button:disabled {
+            background-color: #95a5a6;
+            cursor: not-allowed;
+        }
+
+        .typing-indicator {
+            display: flex;
+            gap: 4px;
+            padding: 12px 16px;
+            background-color: #f0f0f0;
+            border-radius: 12px;
+            width: fit-content;
+        }
+
+        .typing-dot {
+            width: 8px;
+            height: 8px;
+            background-color: #95a5a6;
+            border-radius: 50%;
+            animation: typing 1.4s infinite;
+        }
+
+        .typing-dot:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .typing-dot:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+
+        @keyframes typing {
+            0%, 60%, 100% {
+                transform: translateY(0);
+            }
+            30% {
+                transform: translateY(-4px);
+            }
+        }
+
+        .file-upload {
+            margin-top: 10px;
+        }
+
+        .file-upload input {
+            display: none;
+        }
+
+        .file-upload label {
+            display: inline-block;
+            padding: 8px 16px;
+            background-color: #95a5a6;
+            color: white;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.2s;
+        }
+
+        .file-upload label:hover {
+            background-color: #7f8c8d;
+        }
+
+        .status-bar {
+            padding: 8px 20px;
+            background-color: #2c3e50;
+            color: #95a5a6;
+            font-size: 12px;
+            display: flex;
+            justify-content: space-between;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>CLAP - Chat Local And Persistent</h1>
+        <select class="model-selector" id="modelSelector">
+            {% for model in models %}
+            <option value="{{ model }}">{{ model }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="main-container">
+        <div class="sidebar">
+            <h3>Knowledge Base</h3>
+            <div class="kb-stats" id="kbStats">
+                <div class="kb-stat">
+                    <span>Chunks:</span>
+                    <span id="chunkCount">0</span>
+                </div>
+                <div class="kb-stat">
+                    <span>Collections:</span>
+                    <span id="collectionCount">0</span>
+                </div>
+            </div>
+
+            <h3>Upload Document</h3>
+            <div class="file-upload">
+                <input type="file" id="fileInput" accept=".pdf,.doc,.docx,.txt">
+                <label for="fileInput">Choose File</label>
+            </div>
+        </div>
+
+        <div class="chat-container">
+            <div class="chat-messages" id="chatMessages">
+                <div class="message">
+                    <div class="avatar ai">AI</div>
+                    <div class="message-content">
+                        Hello! I'm CLAP, your local AI assistant. How can I help you today?
+                    </div>
+                </div>
+            </div>
+
+            <div class="chat-input-container">
+                <div class="chat-input-wrapper">
+                    <textarea class="chat-input" id="chatInput" placeholder="Type your message..." rows="1"></textarea>
+                    <button class="send-button" id="sendButton">Send</button>
+                </div>
+                <div class="file-upload" style="margin-top: 10px; text-align: center;">
+                    <span style="font-size: 12px; color: #666;">Tip: You can also drag and drop files into the chat</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="status-bar">
+        <span id="statusText">Ready</span>
+        <span>CLAP v1.0.0</span>
+    </div>
+
+    <script>
+        // Initialize Socket.IO
+        const socket = io();
+
+        // DOM Elements
+        const chatMessages = document.getElementById('chatMessages');
+        const chatInput = document.getElementById('chatInput');
+        const sendButton = document.getElementById('sendButton');
+        const modelSelector = document.getElementById('modelSelector');
+        const fileInput = document.getElementById('fileInput');
+        const statusText = document.getElementById('statusText');
+
+        // Current state
+        let isTyping = false;
+
+        // Send message function
+        function sendMessage() {
+            const message = chatInput.value.trim();
+            if (!message) return;
+
+            // Add user message
+            addMessage(message, 'user');
+            chatInput.value = '';
+            chatInput.style.height = 'auto';
+
+            // Show typing indicator
+            showTypingIndicator();
+
+            // Get selected model
+            const model = modelSelector.value;
+
+            // Send via Socket.IO
+            socket.emit('chat_message', { message, model });
+        }
+
+        // Add message to chat
+        function addMessage(content, sender) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${sender}`;
+
+            const avatar = document.createElement('div');
+            avatar.className = `avatar ${sender}`;
+            avatar.textContent = sender === 'user' ? 'U' : 'AI';
+
+            const messageContent = document.createElement('div');
+            messageContent.className = 'message-content';
+            messageContent.textContent = content;
+
+            messageDiv.appendChild(avatar);
+            messageDiv.appendChild(messageContent);
+
+            // Remove typing indicator if exists
+            const typingIndicator = document.querySelector('.typing-indicator');
+            if (typingIndicator) {
+                typingIndicator.remove();
+            }
+
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // Show typing indicator
+        function showTypingIndicator() {
+            const indicator = document.createElement('div');
+            indicator.className = 'message';
+            indicator.innerHTML = `
+                <div class="avatar ai">AI</div>
+                <div class="typing-indicator">
+                    <div class="typing-dot"></div>
+                    <div class="typing-dot"></div>
+                    <div class="typing-dot"></div>
+                </div>
+            `;
+            chatMessages.appendChild(indicator);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // Socket.IO event handlers
+        socket.on('connect', () => {
+            statusText.textContent = 'Connected';
+            updateKBStats();
+        });
+
+        socket.on('disconnect', () => {
+            statusText.textContent = 'Disconnected';
+        });
+
+        socket.on('chat_response', (data) => {
+            const typingIndicator = document.querySelector('.typing-indicator');
+            if (typingIndicator) {
+                typingIndicator.parentElement.remove();
+            }
+
+            if (data.done) {
+                statusText.textContent = 'Ready';
+            } else {
+                // Add or update AI message
+                let lastMessage = chatMessages.lastElementChild;
+                if (!lastMessage || !lastMessage.classList.contains('message') || !lastMessage.classList.contains('ai')) {
+                    const messageDiv = document.createElement('div');
+                    messageDiv.className = 'message ai';
+                    messageDiv.innerHTML = `
+                        <div class="avatar ai">AI</div>
+                        <div class="message-content"></div>
+                    `;
+                    chatMessages.appendChild(messageDiv);
+                    lastMessage = messageDiv;
+                }
+
+                const content = lastMessage.querySelector('.message-content');
+                content.textContent += data.text;
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+        });
+
+        socket.on('error', (data) => {
+            statusText.textContent = `Error: ${data.error}`;
+            const typingIndicator = document.querySelector('.typing-indicator');
+            if (typingIndicator) {
+                typingIndicator.parentElement.remove();
+            }
+        });
+
+        // File upload handler
+        fileInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            statusText.textContent = `Uploading ${file.name}...`;
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch('/api/kb/index', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    statusText.textContent = `Indexed ${result.chunks} chunks from ${file.name}`;
+                    updateKBStats();
+                } else {
+                    statusText.textContent = `Error: ${result.error}`;
+                }
+            } catch (error) {
+                statusText.textContent = `Upload failed: ${error.message}`;
+            }
+        });
+
+        // Update KB stats
+        async function updateKBStats() {
+            try {
+                const response = await fetch('/api/kb/stats');
+                const stats = await response.json();
+
+                document.getElementById('chunkCount').textContent = stats.chunks || 0;
+                document.getElementById('collectionCount').textContent = stats.collections || 0;
+            } catch (error) {
+                console.error('Failed to update KB stats:', error);
+            }
+        }
+
+        // Event listeners
+        sendButton.addEventListener('click', sendMessage);
+
+        chatInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        // Auto-resize textarea
+        chatInput.addEventListener('input', () => {
+            chatInput.style.height = 'auto';
+            chatInput.style.height = Math.min(chatInput.scrollHeight, 150) + 'px';
+        });
+
+        // Drag and drop
+        chatMessages.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            chatMessages.style.backgroundColor = '#e8f4f8';
+        });
+
+        chatMessages.addEventListener('dragleave', () => {
+            chatMessages.style.backgroundColor = '';
+        });
+
+        chatMessages.addEventListener('drop', (e) => {
+            e.preventDefault();
+            chatMessages.style.backgroundColor = '';
+
+            const file = e.dataTransfer.files[0];
+            if (file) {
+                fileInput.files = e.dataTransfer.files;
+                fileInput.dispatchEvent(new Event('change'));
+            }
+        });
+
+        // Initialize
+        updateKBStats();
+    </script>
+</body>
+</html>

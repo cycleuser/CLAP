@@ -1,43 +1,48 @@
-beeware
-briefcase    
-# PySide6 is a set of Python bindings for The Qt Company’s Qt application framework and runs on all platforms supported by Qt including Windows macOS Linux iOS and Android.
-PySide6
-# chardet is a universal character encoding detector.
-chardet
-# requests is a simple yet elegant HTTP library.
-requests
-# ollama is not a common library please check its documentation for more details.
-ollama
-# mistune is a markdown parser in pure Python with renderer features.
-mistune
-# matplotlib is a plotting library for the Python programming language and its numerical mathematics extension NumPy.
-matplotlib
-# numpy is a library for the Python programming language adding support for large multi-dimensional arrays and matrices along with a large collection of high-level mathematical functions to operate on these arrays.
-numpy
-# scipy is a free and open-source Python library used for scientific computing and technical computing.
-scipy
-# pandas is a software library written for the Python programming language for data manipulation and analysis.
-pandas
-# langchain is a library for the Python programming language that provides a set of tools for working with natural language data.
-langchain
-# mammoth is a library for the Python programming language that converts .docx documents to HTML and Markdown.
-mammoth
-# chromadb is for data storage and retrieval and may be replaced in the future.
-chromadb
-# langchain_community is a library for the Python programming language that provides a set of tools for working with natural language data.
+# CLAP - Chat Local And Persistent
+# https://github.com/cycleuser/CLAP
 
-# streamlit
-# transformers
-# sentence-transformers
-langchain_community
-langchain_ollama
-langchain_core
-langchain-groq
-langchain_text_splitters
-unstructured
-unstructured[pdf]
-pdfminer.six
-faiss-cpu
-nltk
-pi_heif
-python-dotenv
+# Core dependencies (minimal, compatible with NuoYi/marker-pdf)
+PySide6>=6.5.0
+ollama>=0.1.0
+langchain>=0.1.0
+langchain-community>=0.0.1
+langchain-ollama>=0.0.1
+langchain-core>=0.1.0
+langchain-text-splitters>=0.0.1
+chromadb>=0.4.0
+mistune>=3.0.0
+Pygments>=2.14.0
+Pillow>=9.0.0
+requests>=2.28.0
+
+# Optional: RAG document processing
+# Install with: pip install clap-llm[rag]
+# pypdf>=4.0.0
+# python-docx>=0.8.11
+# faiss-cpu>=1.7.0
+
+# Optional: Data analysis
+# Install with: pip install clap-llm[data]
+# numpy>=1.24.0
+# pandas>=2.0.0
+# matplotlib>=3.7.0
+# scipy>=1.10.0
+
+# Optional: Web interface
+# Install with: pip install clap-llm[web]
+# flask>=2.3.0
+# flask-socketio>=5.3.0
+# flask-cors>=4.0.0
+
+# Optional: CLI interface
+# Install with: pip install clap-llm[cli]
+# rich>=13.0.0
+# prompt-toolkit>=3.0.0
+
+# Development dependencies
+# Install with: pip install clap-llm[dev]
+# pytest>=7.3.0
+# pytest-cov>=4.1.0
+# ruff>=0.0.270
+# build>=1.0.0
+# twine>=4.0.0
