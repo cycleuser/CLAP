@@ -113,8 +113,8 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(4)
 
-        history_label = QLabel(t("chat_history"))
-        layout.addWidget(history_label)
+        self.history_label = QLabel(t("chat_history"))
+        layout.addWidget(self.history_label)
 
         self.history_list = QListWidget()
         self.history_list.setMaximumHeight(120)
@@ -130,8 +130,8 @@ class MainWindow(QMainWindow):
         history_btn_layout.addWidget(self.delete_chat_btn)
         layout.addLayout(history_btn_layout)
 
-        chat_label = QLabel(t("conversation"))
-        layout.addWidget(chat_label)
+        self.chat_label = QLabel(t("conversation"))
+        layout.addWidget(self.chat_label)
 
         self.chat_browser = QTextBrowser()
         self.chat_browser.setOpenExternalLinks(True)
@@ -162,30 +162,31 @@ class MainWindow(QMainWindow):
         toolbar = QToolBar("Main Toolbar")
         self.addToolBar(toolbar)
 
-        open_action = QAction(t("open_document"), self)
-        open_action.setShortcut(QKeySequence("Ctrl+O"))
-        open_action.triggered.connect(self.open_document)
-        toolbar.addAction(open_action)
+        self.open_action = QAction(t("open_document"), self)
+        self.open_action.setShortcut(QKeySequence("Ctrl+O"))
+        self.open_action.triggered.connect(self.open_document)
+        toolbar.addAction(self.open_action)
 
         toolbar.addSeparator()
 
-        save_chat_action = QAction(t("save_chat"), self)
-        save_chat_action.setShortcut(QKeySequence("Ctrl+S"))
-        save_chat_action.triggered.connect(self.save_chat_to_file)
-        toolbar.addAction(save_chat_action)
+        self.save_chat_action = QAction(t("save_chat"), self)
+        self.save_chat_action.setShortcut(QKeySequence("Ctrl+S"))
+        self.save_chat_action.triggered.connect(self.save_chat_to_file)
+        toolbar.addAction(self.save_chat_action)
 
-        load_chat_action = QAction(t("load_chat"), self)
-        load_chat_action.setShortcut(QKeySequence("Ctrl+L"))
-        load_chat_action.triggered.connect(self.load_chat_from_file)
-        toolbar.addAction(load_chat_action)
+        self.load_chat_action = QAction(t("load_chat"), self)
+        self.load_chat_action.setShortcut(QKeySequence("Ctrl+L"))
+        self.load_chat_action.triggered.connect(self.load_chat_from_file)
+        toolbar.addAction(self.load_chat_action)
 
-        export_action = QAction(t("export_md"), self)
-        export_action.triggered.connect(self.export_chat_to_markdown)
-        toolbar.addAction(export_action)
+        self.export_action = QAction(t("export_md"), self)
+        self.export_action.triggered.connect(self.export_chat_to_markdown)
+        toolbar.addAction(self.export_action)
 
         toolbar.addSeparator()
 
-        toolbar.addWidget(QLabel(f"{t('model')}:"))
+        self.model_label = QLabel(f"{t('model')}:")
+        toolbar.addWidget(self.model_label)
         self.model_combo = QComboBox()
         self.model_combo.setMinimumWidth(150)
         self.refresh_models()
@@ -194,10 +195,10 @@ class MainWindow(QMainWindow):
 
         toolbar.addSeparator()
 
-        settings_action = QAction(t("settings"), self)
-        settings_action.setShortcut(QKeySequence("Ctrl+,"))
-        settings_action.triggered.connect(self.show_settings)
-        toolbar.addAction(settings_action)
+        self.settings_action = QAction(t("settings"), self)
+        self.settings_action.setShortcut(QKeySequence("Ctrl+,"))
+        self.settings_action.triggered.connect(self.show_settings)
+        toolbar.addAction(self.settings_action)
 
         toolbar.addSeparator()
 
@@ -242,12 +243,33 @@ class MainWindow(QMainWindow):
     def _retranslate_ui(self):
         """Retranslate UI after language change."""
         self.setWindowTitle(t("app_name"))
-        self.doc_label.setText(t("no_document"))
+
+        self.open_action.setText(t("open_document"))
+        self.save_chat_action.setText(t("save_chat"))
+        self.load_chat_action.setText(t("load_chat"))
+        self.export_action.setText(t("export_md"))
+        self.settings_action.setText(t("settings"))
+
+        self.model_label.setText(f"{t('model')}:")
+        chunks = (
+            self.kb_label.text().split(":")[-1].strip()
+            if ":" in self.kb_label.text()
+            else f"0 {t('chunks')}"
+        )
+        self.kb_label.setText(f"{t('kb')}: {chunks}")
+
+        self.history_label.setText(t("chat_history"))
+        self.chat_label.setText(t("conversation"))
+
         self.new_chat_btn.setText(t("new_chat"))
         self.delete_chat_btn.setText(t("delete"))
         self.send_btn.setText(t("send"))
         self.clear_btn.setText(t("clear"))
-        self.kb_label.setText(f"{t('kb')}: {self.kb_label.text().split(':')[-1].strip()}")
+
+        self.input_edit.setPlaceholderText(t("type_message"))
+        self.doc_label.setText(t("no_document"))
+
+        self.update_status()
 
     def open_document(self):
         """Open a document."""
@@ -425,7 +447,7 @@ class MainWindow(QMainWindow):
         for msg in self.messages:
             role = msg.get("role", "")
             content = msg.get("content", "")
-            role_display = "You" if role == "user" else "Assistant"
+            role_display = t("you") if role == "user" else t("assistant")
             html += f"<p><b>{role_display}:</b></p>{self._markdown(content)}<hr>"
         self.chat_browser.setHtml(html)
 
@@ -446,7 +468,7 @@ class MainWindow(QMainWindow):
 
         self.current_response = ""
         self.send_btn.setEnabled(False)
-        self.status_bar.showMessage("Thinking...")
+        self.status_bar.showMessage(t("thinking"))
 
         self.chat_thread = ChatThread(
             messages=self.messages,
@@ -466,7 +488,7 @@ class MainWindow(QMainWindow):
         for msg in temp_messages:
             role = msg.get("role", "")
             content = msg.get("content", "")
-            role_display = "You" if role == "user" else "Assistant"
+            role_display = t("you") if role == "user" else t("assistant")
             html += f"<p><b>{role_display}:</b></p>{self._markdown(content)}<hr>"
         self.chat_browser.setHtml(html)
 

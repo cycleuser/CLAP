@@ -53,6 +53,10 @@ TRANSLATIONS = {
         "general": "General",
         "models": "Models",
         "kb": "KB",
+        "you": "You",
+        "assistant": "Assistant",
+        "thinking": "Thinking...",
+        "document": "Document",
     },
     "zh": {
         "app_name": "CLAP",
@@ -106,6 +110,10 @@ TRANSLATIONS = {
         "general": "常规",
         "models": "模型",
         "kb": "知识库",
+        "you": "你",
+        "assistant": "助手",
+        "thinking": "思考中...",
+        "document": "文档",
     },
     "ja": {
         "app_name": "CLAP",
@@ -159,6 +167,10 @@ TRANSLATIONS = {
         "general": "一般",
         "models": "モデル",
         "kb": "KB",
+        "you": "あなた",
+        "assistant": "アシスタント",
+        "thinking": "思考中...",
+        "document": "ドキュメント",
     },
     "fr": {
         "app_name": "CLAP",
@@ -212,6 +224,10 @@ TRANSLATIONS = {
         "general": "Général",
         "models": "Modèles",
         "kb": "KB",
+        "you": "Vous",
+        "assistant": "Assistant",
+        "thinking": "Réflexion...",
+        "document": "Document",
     },
     "ru": {
         "app_name": "CLAP",
@@ -265,6 +281,10 @@ TRANSLATIONS = {
         "general": "Общее",
         "models": "Модели",
         "kb": "БЗ",
+        "you": "Вы",
+        "assistant": "Ассистент",
+        "thinking": "Думаю...",
+        "document": "Документ",
     },
     "de": {
         "app_name": "CLAP",
@@ -318,6 +338,10 @@ TRANSLATIONS = {
         "general": "Allgemein",
         "models": "Modelle",
         "kb": "KB",
+        "you": "Sie",
+        "assistant": "Assistent",
+        "thinking": "Denke nach...",
+        "document": "Dokument",
     },
     "es": {
         "app_name": "CLAP",
@@ -371,6 +395,10 @@ TRANSLATIONS = {
         "general": "General",
         "models": "Modelos",
         "kb": "KB",
+        "you": "Usted",
+        "assistant": "Asistente",
+        "thinking": "Pensando...",
+        "document": "Documento",
     },
     "pt": {
         "app_name": "CLAP",
@@ -424,6 +452,10 @@ TRANSLATIONS = {
         "general": "Geral",
         "models": "Modelos",
         "kb": "KB",
+        "you": "Você",
+        "assistant": "Assistente",
+        "thinking": "Pensando...",
+        "document": "Documento",
     },
     "ko": {
         "app_name": "CLAP",
@@ -477,6 +509,10 @@ TRANSLATIONS = {
         "general": "일반",
         "models": "모델",
         "kb": "KB",
+        "you": "당신",
+        "assistant": "어시스턴트",
+        "thinking": "생각 중...",
+        "document": "문서",
     },
 }
 
