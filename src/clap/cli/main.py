@@ -45,7 +45,7 @@ def main():
 def _chat(args):
     msg = " ".join(args.message) if args.message else None
     if not msg:
-        print("Usage: clap chat \"your message\"")
+        print('Usage: clap chat "your message"')
         return 1
 
     try:
@@ -57,7 +57,9 @@ def _chat(args):
         model = args.model if args.model in models else models[0]
         print(f"Model: {model}\nYou: {msg}\nAI: ", end="", flush=True)
 
-        for chunk in ollama.chat(model=model, messages=[{"role": "user", "content": msg}], stream=True):
+        for chunk in ollama.chat(
+            model=model, messages=[{"role": "user", "content": msg}], stream=True
+        ):
             print(chunk["message"]["content"], end="", flush=True)
         print()
         return 0
@@ -86,7 +88,11 @@ def _kb(args):
 
     if args.kb_cmd == "index":
         r = kb.index_document(args.path)
-        print(f"Indexed {r.get('chunks', 0)} chunks" if r.get("success") else f"Error: {r.get('error')}")
+        print(
+            f"Indexed {r.get('chunks', 0)} chunks"
+            if r.get("success")
+            else f"Error: {r.get('error')}"
+        )
     elif args.kb_cmd == "search":
         for i, r in enumerate(kb.search(args.query, args.k), 1):
             print(f"{i}. [{r['score']:.2f}] {r['content'][:100]}...")

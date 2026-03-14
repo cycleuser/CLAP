@@ -11,7 +11,13 @@ class ChatThread(QThread):
 
     new_text = Signal(str)
 
-    def __init__(self, messages: list[dict], model: str, path: str = "", embed_model: str = "nomic-embed-text:latest"):
+    def __init__(
+        self,
+        messages: list[dict],
+        model: str,
+        path: str = "",
+        embed_model: str = "nomic-embed-text:latest",
+    ):
         super().__init__()
         self.messages = messages
         self.model = model
@@ -35,7 +41,9 @@ class ChatThread(QThread):
         with open(self.path, "rb") as f:
             image_data = f.read()
 
-        for chunk in ollama.generate(model=self.model, prompt=self.messages[-1]["content"], images=[image_data], stream=True):
+        for chunk in ollama.generate(
+            model=self.model, prompt=self.messages[-1]["content"], images=[image_data], stream=True
+        ):
             self.new_text.emit(chunk.get("response", ""))
 
     def _process_document(self):
@@ -54,7 +62,9 @@ class ChatThread(QThread):
 
         try:
             embeddings = ollama.embed(model=self.embed_model, input=chunks)
-            query_emb = ollama.embed(model=self.embed_model, input=[self.messages[-1]["content"]])["embeddings"][0]
+            query_emb = ollama.embed(model=self.embed_model, input=[self.messages[-1]["content"]])[
+                "embeddings"
+            ][0]
 
             scores = []
             for i, emb in enumerate(embeddings["embeddings"]):

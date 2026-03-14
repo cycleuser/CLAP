@@ -12,6 +12,7 @@ __email__ = "wedonotuse@outlook.com"
 def main():
     """Main entry point for CLAP."""
     from clap.__main__ import main as _main
+
     return _main()
 
 
@@ -19,9 +20,11 @@ def main():
 def __getattr__(name):
     if name == "ChatThread":
         from clap.core.chat_thread import ChatThread
+
         return ChatThread
     elif name == "KnowledgeBase":
         from clap.core.knowledge_base import KnowledgeBase
+
         return KnowledgeBase
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 

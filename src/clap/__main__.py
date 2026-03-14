@@ -22,19 +22,22 @@ Examples:
     )
 
     parser.add_argument(
-        "-V", "--version",
+        "-V",
+        "--version",
         action="version",
         version="clap-llm 1.0.0",
     )
 
     parser.add_argument(
-        "-g", "--gui",
+        "-g",
+        "--gui",
         action="store_true",
         help="Start GUI mode",
     )
 
     parser.add_argument(
-        "-w", "--web",
+        "-w",
+        "--web",
         action="store_true",
         help="Start web server mode",
     )
@@ -107,6 +110,7 @@ def _start_gui():
     """Start GUI mode."""
     try:
         from clap.gui.main_window import main as gui_main
+
         return gui_main()
     except ImportError as e:
         print(f"Error importing GUI components: {e}")
@@ -120,6 +124,7 @@ def _start_web(host, port):
         import sys
 
         from clap.web.app import main as web_main
+
         sys.argv = ["clap", "--host", host, "--port", str(port)]
         return web_main()
     except ImportError as e:
@@ -132,6 +137,7 @@ def _run_chat(args):
     """Run chat command."""
     try:
         from clap.cli.main import chat_command
+
         return chat_command(args)
     except ImportError:
         print("Error: CLI features not available")
@@ -142,6 +148,7 @@ def _run_models():
     """Run models command."""
     try:
         from clap.cli.main import models_command
+
         return models_command(None)
     except ImportError:
         print("Error: CLI features not available")
@@ -152,6 +159,7 @@ def _run_interactive():
     """Run interactive mode."""
     try:
         from clap.cli.main import interactive_mode
+
         return interactive_mode()
     except ImportError:
         print("Error: CLI features not available")
@@ -162,6 +170,7 @@ def _run_kb(args):
     """Run knowledge base command."""
     try:
         from clap.cli.main import kb_command
+
         return kb_command(args)
     except ImportError:
         print("Error: CLI features not available")

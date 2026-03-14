@@ -32,6 +32,7 @@ from clap.core.chat_thread import ChatThread
 from clap.core.knowledge_base import KnowledgeBase
 from clap.gui.settings_dialog import SettingsDialog
 from clap.utils.config import get_available_models, is_first_run, load_config, save_config
+from clap.utils.i18n import set_language, t
 
 
 class MainWindow(QMainWindow):
@@ -40,6 +41,8 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.config = load_config()
+        set_language(self.config.language)
+
         self.chat_thread: ChatThread | None = None
         self.knowledge_base: KnowledgeBase | None = None
         self.messages: list[dict] = []
@@ -48,7 +51,7 @@ class MainWindow(QMainWindow):
         self.response_browser: QTextBrowser | None = None
         self.history_path = Path.home() / ".clap" / "history.json"
 
-        self.setWindowTitle("CLAP")
+        self.setWindowTitle(t("app_name"))
         self.setMinimumSize(1200, 800)
 
         self.setup_toolbar()
@@ -96,7 +99,7 @@ class MainWindow(QMainWindow):
         )
         layout.addWidget(self.pdf_viewer, 1)
 
-        self.doc_label = QLabel("Open a document to view")
+        self.doc_label = QLabel(t("no_document"))
         self.doc_label.setAlignment(Qt.AlignCenter)
         self.doc_label.setWordWrap(True)
         layout.addWidget(self.doc_label)
@@ -110,7 +113,7 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(4)
 
-        history_label = QLabel("Chat History")
+        history_label = QLabel(t("chat_history"))
         layout.addWidget(history_label)
 
         self.history_list = QListWidget()
@@ -119,15 +122,15 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.history_list)
 
         history_btn_layout = QHBoxLayout()
-        self.new_chat_btn = QPushButton("New Chat")
+        self.new_chat_btn = QPushButton(t("new_chat"))
         self.new_chat_btn.clicked.connect(self.new_chat)
-        self.delete_chat_btn = QPushButton("Delete")
+        self.delete_chat_btn = QPushButton(t("delete"))
         self.delete_chat_btn.clicked.connect(self._delete_conversation)
         history_btn_layout.addWidget(self.new_chat_btn)
         history_btn_layout.addWidget(self.delete_chat_btn)
         layout.addLayout(history_btn_layout)
 
-        chat_label = QLabel("Conversation")
+        chat_label = QLabel(t("conversation"))
         layout.addWidget(chat_label)
 
         self.chat_browser = QTextBrowser()
@@ -136,17 +139,17 @@ class MainWindow(QMainWindow):
 
         input_layout = QHBoxLayout()
         self.input_edit = QPlainTextEdit()
-        self.input_edit.setPlaceholderText("Type your message here...")
+        self.input_edit.setPlaceholderText(t("type_message"))
         self.input_edit.setMaximumHeight(60)
         input_layout.addWidget(self.input_edit, 1)
 
         btn_layout = QVBoxLayout()
-        self.send_btn = QPushButton("Send")
+        self.send_btn = QPushButton(t("send"))
         self.send_btn.clicked.connect(self.send_message)
         self.send_btn.setDefault(True)
         btn_layout.addWidget(self.send_btn)
 
-        self.clear_btn = QPushButton("Clear")
+        self.clear_btn = QPushButton(t("clear"))
         self.clear_btn.clicked.connect(self.clear_chat)
         btn_layout.addWidget(self.clear_btn)
         input_layout.addLayout(btn_layout)
@@ -159,14 +162,30 @@ class MainWindow(QMainWindow):
         toolbar = QToolBar("Main Toolbar")
         self.addToolBar(toolbar)
 
-        open_action = QAction("Open Document", self)
+        open_action = QAction(t("open_document"), self)
         open_action.setShortcut(QKeySequence("Ctrl+O"))
         open_action.triggered.connect(self.open_document)
         toolbar.addAction(open_action)
 
         toolbar.addSeparator()
 
-        toolbar.addWidget(QLabel("Model:"))
+        save_chat_action = QAction(t("save_chat"), self)
+        save_chat_action.setShortcut(QKeySequence("Ctrl+S"))
+        save_chat_action.triggered.connect(self.save_chat_to_file)
+        toolbar.addAction(save_chat_action)
+
+        load_chat_action = QAction(t("load_chat"), self)
+        load_chat_action.setShortcut(QKeySequence("Ctrl+L"))
+        load_chat_action.triggered.connect(self.load_chat_from_file)
+        toolbar.addAction(load_chat_action)
+
+        export_action = QAction(t("export_md"), self)
+        export_action.triggered.connect(self.export_chat_to_markdown)
+        toolbar.addAction(export_action)
+
+        toolbar.addSeparator()
+
+        toolbar.addWidget(QLabel(f"{t('model')}:"))
         self.model_combo = QComboBox()
         self.model_combo.setMinimumWidth(150)
         self.refresh_models()
@@ -175,14 +194,14 @@ class MainWindow(QMainWindow):
 
         toolbar.addSeparator()
 
-        settings_action = QAction("Settings", self)
+        settings_action = QAction(t("settings"), self)
         settings_action.setShortcut(QKeySequence("Ctrl+,"))
         settings_action.triggered.connect(self.show_settings)
         toolbar.addAction(settings_action)
 
         toolbar.addSeparator()
 
-        self.kb_label = QLabel("KB: 0 chunks")
+        self.kb_label = QLabel(f"{t('kb')}: 0 {t('chunks')}")
         toolbar.addWidget(self.kb_label)
 
     def refresh_models(self):
@@ -206,8 +225,8 @@ class MainWindow(QMainWindow):
     def update_status(self):
         """Update status bar."""
         model = self.model_combo.currentText() or self.config.chat_model
-        doc = os.path.basename(self.current_file) if self.current_file else "No document"
-        self.status_bar.showMessage(f"Model: {model} | Document: {doc}")
+        doc = os.path.basename(self.current_file) if self.current_file else t("no_document")
+        self.status_bar.showMessage(f"{t('model')}: {model} | {t('open_document')}: {doc}")
 
     def show_settings(self):
         """Show settings dialog."""
@@ -215,13 +234,25 @@ class MainWindow(QMainWindow):
         if dialog.exec():
             self.config = dialog.get_config()
             save_config(self.config)
+            set_language(self.config.language)
+            self._retranslate_ui()
             self.refresh_models()
             self.update_status()
+
+    def _retranslate_ui(self):
+        """Retranslate UI after language change."""
+        self.setWindowTitle(t("app_name"))
+        self.doc_label.setText(t("no_document"))
+        self.new_chat_btn.setText(t("new_chat"))
+        self.delete_chat_btn.setText(t("delete"))
+        self.send_btn.setText(t("send"))
+        self.clear_btn.setText(t("clear"))
+        self.kb_label.setText(f"{t('kb')}: {self.kb_label.text().split(':')[-1].strip()}")
 
     def open_document(self):
         """Open a document."""
         path, _ = QFileDialog.getOpenFileName(
-            self, "Open Document", "", "Documents (*.pdf *.doc *.docx *.txt);;All Files (*)"
+            self, t("open_document"), "", "Documents (*.pdf *.doc *.docx *.txt);;All Files (*)"
         )
         if path:
             self.load_document(path)
@@ -237,7 +268,7 @@ class MainWindow(QMainWindow):
             self.doc_label.setText(os.path.basename(path))
             self.doc_label.show()
 
-        self.status_bar.showMessage("Indexing document...")
+        self.status_bar.showMessage(t("indexing"))
         self.knowledge_base = KnowledgeBase(
             persist_directory=self.config.persist_directory, embedding_model=self.config.embed_model
         )
@@ -247,10 +278,12 @@ class MainWindow(QMainWindow):
 
         if result.get("success"):
             chunks = result.get("chunks", 0)
-            self.kb_label.setText(f"KB: {chunks} chunks")
-            self.status_bar.showMessage(f"Loaded: {os.path.basename(path)} ({chunks} chunks)")
+            self.kb_label.setText(f"{t('kb')}: {chunks} {t('chunks')}")
+            self.status_bar.showMessage(
+                f"{t('loaded')}: {os.path.basename(path)} ({chunks} {t('chunks')})"
+            )
         else:
-            self.status_bar.showMessage(f"Error: {result.get('error', 'Unknown')}")
+            self.status_bar.showMessage(f"{t('error')}: {result.get('error', 'Unknown')}")
 
     def new_chat(self):
         """Start a new chat session."""
@@ -258,11 +291,124 @@ class MainWindow(QMainWindow):
         self.messages.clear()
         self.current_response = ""
         self.chat_browser.clear()
-        self.status_bar.showMessage("New chat started")
+        self.status_bar.showMessage(t("new_chat_started"))
 
     def clear_chat(self):
         """Clear current chat display."""
         self.chat_browser.clear()
+
+    def save_chat_to_file(self):
+        """Save current conversation to a file."""
+        if not self.messages:
+            QMessageBox.information(self, t("info"), t("no_conversation"))
+            return
+
+        path, _ = QFileDialog.getSaveFileName(
+            self, t("save_conversation"), "", "CLAP Chat (*.clap);;JSON (*.json);;All Files (*)"
+        )
+        if not path:
+            return
+
+        if not path.endswith((".clap", ".json")):
+            path += ".clap"
+
+        data = {
+            "version": "1.0",
+            "timestamp": datetime.now().isoformat(),
+            "model": self.config.chat_model,
+            "embed_model": self.config.embed_model,
+            "document": self.current_file,
+            "messages": self.messages,
+            "language": self.config.language,
+        }
+
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            self.status_bar.showMessage(f"{t('saved')}: {os.path.basename(path)}")
+        except Exception as e:
+            QMessageBox.warning(self, t("error"), f"{t('failed_save')}: {e}")
+
+    def load_chat_from_file(self):
+        """Load conversation from a file."""
+        path, _ = QFileDialog.getOpenFileName(
+            self, t("load_conversation"), "", "CLAP Chat (*.clap);;JSON (*.json);;All Files (*)"
+        )
+        if not path:
+            return
+
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+
+            self.messages = data.get("messages", [])
+            self.current_file = data.get("document", "")
+
+            model = data.get("model", "")
+            if model:
+                self.config.chat_model = model
+                self.model_combo.setCurrentText(model)
+
+            lang = data.get("language", "")
+            if lang:
+                self.config.language = lang
+                set_language(lang)
+
+            self._render_messages()
+            self.doc_label.setText(
+                os.path.basename(self.current_file) if self.current_file else t("no_document")
+            )
+            self.update_status()
+            self.status_bar.showMessage(f"{t('loaded')}: {os.path.basename(path)}")
+        except Exception as e:
+            QMessageBox.warning(self, t("error"), f"{t('failed_load')}: {e}")
+
+    def export_chat_to_markdown(self):
+        """Export conversation to a markdown file."""
+        if not self.messages:
+            QMessageBox.information(self, t("info"), t("no_conversation_export"))
+            return
+
+        path, _ = QFileDialog.getSaveFileName(
+            self, t("export_markdown"), "", "Markdown (*.md);;Text (*.txt);;All Files (*)"
+        )
+        if not path:
+            return
+
+        if not path.endswith((".md", ".txt")):
+            path += ".md"
+
+        lines = [
+            f"# {t('app_name')} {t('conversation')}",
+            "",
+            f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+            f"{t('model')}: {self.config.chat_model}",
+            "",
+        ]
+        if self.current_file:
+            lines.append(f"{t('open_document')}: {os.path.basename(self.current_file)}")
+            lines.append("")
+
+        lines.append("---")
+        lines.append("")
+
+        for msg in self.messages:
+            role = msg.get("role", "")
+            content = msg.get("content", "")
+            role_display = "**You**" if role == "user" else "**Assistant**"
+            lines.append(f"{role_display}:")
+            lines.append("")
+            lines.append(content)
+            lines.append("")
+            lines.append("---")
+            lines.append("")
+
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("\n".join(lines))
+            self.status_bar.showMessage(f"{t('exported')}: {os.path.basename(path)}")
+        except Exception as e:
+            QMessageBox.warning(self, t("error"), f"{t('failed_export')}: {e}")
 
     def _markdown(self, text: str) -> str:
         """Convert markdown to HTML."""
@@ -291,7 +437,7 @@ class MainWindow(QMainWindow):
 
         model = self.model_combo.currentText()
         if not model:
-            QMessageBox.warning(self, "Error", "Please select a model.")
+            QMessageBox.warning(self, t("error"), t("select_model"))
             return
 
         self.messages.append({"role": "user", "content": text})
@@ -333,7 +479,7 @@ class MainWindow(QMainWindow):
         if self.current_response:
             self.messages.append({"role": "assistant", "content": self.current_response})
         self.current_response = ""
-        self.status_bar.showMessage("Ready")
+        self.status_bar.showMessage(t("ready"))
         self.save_history()
 
     def save_history(self):
@@ -356,6 +502,7 @@ class MainWindow(QMainWindow):
             "messages": self.messages,
             "document": self.current_file,
             "model": self.config.chat_model,
+            "language": self.config.language,
         }
 
         if self.messages:
@@ -399,7 +546,7 @@ class MainWindow(QMainWindow):
         """Update the history list widget."""
         self.history_list.clear()
         for i, session in enumerate(history[:20]):
-            preview = session.get("preview", "Chat")
+            preview = session.get("preview", t("conversation"))
             timestamp = session.get("timestamp", "")[:10]
             self.history_list.addItem(f"{timestamp}: {preview}...")
             self.history_list.item(self.history_list.count() - 1).setData(Qt.UserRole, i)
@@ -423,13 +570,18 @@ class MainWindow(QMainWindow):
                     self.config.chat_model = model
                     self.model_combo.setCurrentText(model)
 
+                lang = session.get("language", "")
+                if lang:
+                    self.config.language = lang
+                    set_language(lang)
+
                 self._render_messages()
                 self.doc_label.setText(
-                    os.path.basename(self.current_file) if self.current_file else "No document"
+                    os.path.basename(self.current_file) if self.current_file else t("no_document")
                 )
                 self.update_status()
         except Exception as e:
-            QMessageBox.warning(self, "Error", f"Failed to load conversation: {e}")
+            QMessageBox.warning(self, t("error"), f"{t('failed_load')}: {e}")
 
     def _delete_conversation(self):
         """Delete selected conversation from history."""

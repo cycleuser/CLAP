@@ -52,7 +52,9 @@ def chat():
             return jsonify({"success": False, "error": "No message"})
 
         full = ""
-        for chunk in ollama.chat(model=model, messages=[{"role": "user", "content": msg}], stream=True):
+        for chunk in ollama.chat(
+            model=model, messages=[{"role": "user", "content": msg}], stream=True
+        ):
             full += chunk["message"]["content"]
 
         return jsonify({"success": True, "response": full})
@@ -98,6 +100,7 @@ def kb_clear():
 
 def main():
     import argparse
+
     parser = argparse.ArgumentParser(description="CLAP Web Server")
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=5000)

@@ -13,7 +13,12 @@ from clap.core.document import chunk_text, load_document
 class KnowledgeBase:
     """Knowledge base for document indexing and retrieval."""
 
-    def __init__(self, persist_directory: str = "", collection_name: str = "clap", embedding_model: str = "nomic-embed-text:latest"):
+    def __init__(
+        self,
+        persist_directory: str = "",
+        collection_name: str = "clap",
+        embedding_model: str = "nomic-embed-text:latest",
+    ):
         self.persist_directory = persist_directory or str(Path.home() / ".clap" / "kb")
         self.embedding_model = embedding_model
         self.chunks: list[str] = []
@@ -21,7 +26,9 @@ class KnowledgeBase:
 
         Path(self.persist_directory).mkdir(parents=True, exist_ok=True)
 
-    def index_document(self, file_path: str, chunk_size: int = 2000, chunk_overlap: int = 200) -> dict:
+    def index_document(
+        self, file_path: str, chunk_size: int = 2000, chunk_overlap: int = 200
+    ) -> dict:
         """Index a document into the knowledge base."""
         try:
             docs = load_document(file_path)
@@ -38,7 +45,11 @@ class KnowledgeBase:
             self.embeddings = result.get("embeddings", [])
 
             self._save()
-            return {"success": True, "chunks": len(self.chunks), "file": os.path.basename(file_path)}
+            return {
+                "success": True,
+                "chunks": len(self.chunks),
+                "file": os.path.basename(file_path),
+            }
 
         except Exception as e:
             return {"success": False, "error": str(e)}
@@ -73,9 +84,11 @@ class KnowledgeBase:
         self.embeddings = []
 
         if os.path.exists(self.persist_directory):
+
             def remove_readonly(func, path, _):
                 os.chmod(path, stat.S_IWRITE)
                 func(path)
+
             shutil.rmtree(self.persist_directory, onerror=remove_readonly)
 
         Path(self.persist_directory).mkdir(parents=True, exist_ok=True)
@@ -89,6 +102,7 @@ class KnowledgeBase:
     def _save(self):
         """Save to disk."""
         import json
+
         data_path = Path(self.persist_directory) / "data.json"
         with open(data_path, "w", encoding="utf-8") as f:
             json.dump({"chunks": self.chunks, "embeddings": self.embeddings}, f)
@@ -96,6 +110,7 @@ class KnowledgeBase:
     def _load(self):
         """Load from disk."""
         import json
+
         data_path = Path(self.persist_directory) / "data.json"
         if data_path.exists():
             try:

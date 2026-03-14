@@ -15,6 +15,7 @@ class CLAPConfig:
     chunk_size: int = 2000
     chunk_overlap: int = 200
     persist_directory: str = ""
+    language: str = "en"
 
     def __post_init__(self):
         if not self.persist_directory:

@@ -24,6 +24,7 @@ from clap.utils.config import (
     load_config,
     save_config,
 )
+from clap.utils.i18n import get_available_languages, get_language_name, set_language, t
 
 
 class SettingsDialog(QDialog):
@@ -34,7 +35,9 @@ class SettingsDialog(QDialog):
         self.first_run = first_run
         self.config = load_config()
 
-        self.setWindowTitle("CLAP Settings" if not first_run else "Welcome to CLAP")
+        set_language(self.config.language)
+
+        self.setWindowTitle(t("settings") if not first_run else t("welcome"))
         self.setMinimumWidth(400)
 
         self.setup_ui()
@@ -46,24 +49,24 @@ class SettingsDialog(QDialog):
         layout = QVBoxLayout(self)
 
         tabs = QTabWidget()
-        tabs.addTab(self._create_models_tab(), "Models")
-        tabs.addTab(self._create_general_tab(), "General")
+        tabs.addTab(self._create_models_tab(), t("models"))
+        tabs.addTab(self._create_general_tab(), t("general"))
         layout.addWidget(tabs)
 
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
 
         if self.first_run:
-            btn = QPushButton("Start")
+            btn = QPushButton(t("start"))
             btn.clicked.connect(self.save_and_close)
             btn.setDefault(True)
             btn_layout.addWidget(btn)
         else:
-            cancel = QPushButton("Cancel")
+            cancel = QPushButton(t("cancel"))
             cancel.clicked.connect(self.reject)
             btn_layout.addWidget(cancel)
 
-            save = QPushButton("Save")
+            save = QPushButton(t("settings"))
             save.clicked.connect(self.save_and_close)
             save.setDefault(True)
             btn_layout.addWidget(save)
@@ -74,26 +77,26 @@ class SettingsDialog(QDialog):
         widget = QWidget()
         layout = QVBoxLayout(widget)
 
-        chat_group = QGroupBox("Chat Model")
+        chat_group = QGroupBox(t("chat_model"))
         chat_layout = QFormLayout(chat_group)
         self.chat_model_combo = QComboBox()
         self.chat_model_combo.setEditable(True)
         self._refresh_chat_models()
-        chat_layout.addRow("Model:", self.chat_model_combo)
+        chat_layout.addRow(f"{t('model')}:", self.chat_model_combo)
 
-        btn = QPushButton("Refresh")
+        btn = QPushButton(t("refresh_models"))
         btn.clicked.connect(self._refresh_chat_models)
         chat_layout.addRow("", btn)
         layout.addWidget(chat_group)
 
-        embed_group = QGroupBox("Embedding Model")
+        embed_group = QGroupBox(t("embed_model"))
         embed_layout = QFormLayout(embed_group)
         self.embed_model_combo = QComboBox()
         self.embed_model_combo.setEditable(True)
         self._refresh_embed_models()
-        embed_layout.addRow("Model:", self.embed_model_combo)
+        embed_layout.addRow(f"{t('model')}:", self.embed_model_combo)
 
-        btn2 = QPushButton("Refresh")
+        btn2 = QPushButton(t("refresh_models"))
         btn2.clicked.connect(self._refresh_embed_models)
         embed_layout.addRow("", btn2)
         layout.addWidget(embed_group)
@@ -107,35 +110,49 @@ class SettingsDialog(QDialog):
         widget = QWidget()
         layout = QVBoxLayout(widget)
 
-        appear = QGroupBox("Appearance")
+        lang_group = QGroupBox(t("language"))
+        lang_layout = QFormLayout(lang_group)
+        self.lang_combo = QComboBox()
+        for lang in get_available_languages():
+            self.lang_combo.addItem(get_language_name(lang), lang)
+        idx = (
+            get_available_languages().index(self.config.language)
+            if self.config.language in get_available_languages()
+            else 0
+        )
+        self.lang_combo.setCurrentIndex(idx)
+        lang_layout.addRow(f"{t('language')}:", self.lang_combo)
+        layout.addWidget(lang_group)
+
+        appear = QGroupBox(t("appearance"))
         appear_layout = QFormLayout(appear)
         self.font_size_spin = QSpinBox()
         self.font_size_spin.setRange(8, 24)
         self.font_size_spin.setValue(self.config.font_size)
-        appear_layout.addRow("Font Size:", self.font_size_spin)
+        appear_layout.addRow(f"{t('font_size')}:", self.font_size_spin)
         layout.addWidget(appear)
 
-        chunk = QGroupBox("Document Processing")
+        chunk = QGroupBox(t("doc_processing"))
         chunk_layout = QFormLayout(chunk)
         self.chunk_size_spin = QSpinBox()
         self.chunk_size_spin.setRange(500, 10000)
         self.chunk_size_spin.setSingleStep(500)
         self.chunk_size_spin.setValue(self.config.chunk_size)
-        chunk_layout.addRow("Chunk Size:", self.chunk_size_spin)
+        chunk_layout.addRow(f"{t('chunk_size')}:", self.chunk_size_spin)
 
         self.chunk_overlap_spin = QSpinBox()
         self.chunk_overlap_spin.setRange(0, 1000)
         self.chunk_overlap_spin.setSingleStep(50)
         self.chunk_overlap_spin.setValue(self.config.chunk_overlap)
-        chunk_layout.addRow("Overlap:", self.chunk_overlap_spin)
+        chunk_layout.addRow(f"{t('overlap')}:", self.chunk_overlap_spin)
         layout.addWidget(chunk)
 
-        storage = QGroupBox("Storage")
+        storage = QGroupBox(t("storage"))
         storage_layout = QFormLayout(storage)
         self.persist_dir_edit = QLineEdit(str(self.config.persist_directory))
-        storage_layout.addRow("Path:", self.persist_dir_edit)
+        storage_layout.addRow(f"{t('path')}:", self.persist_dir_edit)
 
-        browse = QPushButton("Browse")
+        browse = QPushButton(t("browse"))
         browse.clicked.connect(self._browse_dir)
         storage_layout.addRow("", browse)
         layout.addWidget(storage)
@@ -158,7 +175,7 @@ class SettingsDialog(QDialog):
             self.embed_model_combo.setCurrentText(current)
 
     def _browse_dir(self):
-        path = QFileDialog.getExistingDirectory(self, "Select Directory", self.persist_dir_edit.text())
+        path = QFileDialog.getExistingDirectory(self, t("browse"), self.persist_dir_edit.text())
         if path:
             self.persist_dir_edit.setText(path)
 
@@ -167,10 +184,10 @@ class SettingsDialog(QDialog):
         embed = self.embed_model_combo.currentText().strip()
 
         if not chat:
-            QMessageBox.warning(self, "Error", "Please select a chat model.")
+            QMessageBox.warning(self, t("error"), t("select_model"))
             return
         if not embed:
-            QMessageBox.warning(self, "Error", "Please select an embedding model.")
+            QMessageBox.warning(self, t("error"), t("select_model"))
             return
 
         self.config.chat_model = chat
@@ -179,7 +196,9 @@ class SettingsDialog(QDialog):
         self.config.chunk_size = self.chunk_size_spin.value()
         self.config.chunk_overlap = self.chunk_overlap_spin.value()
         self.config.persist_directory = self.persist_dir_edit.text()
+        self.config.language = self.lang_combo.currentData()
 
+        set_language(self.config.language)
         save_config(self.config)
         self.accept()
 

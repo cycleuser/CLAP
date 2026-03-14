@@ -14,13 +14,13 @@ class Document:
 def load_document(file_path: str) -> list[Document]:
     """Load document based on file type."""
     lower = file_path.lower()
-    if lower.endswith('.pdf'):
+    if lower.endswith(".pdf"):
         return _load_pdf(file_path)
-    elif lower.endswith(('.doc', '.docx')):
+    elif lower.endswith((".doc", ".docx")):
         return _load_docx(file_path)
-    elif lower.endswith('.txt'):
+    elif lower.endswith(".txt"):
         return _load_text(file_path)
-    elif lower.endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp')):
+    elif lower.endswith((".png", ".jpg", ".jpeg", ".gif", ".bmp")):
         return _load_image(file_path)
     return []
 
@@ -57,7 +57,7 @@ def _load_docx(file_path: str) -> list[Document]:
 
 def _load_text(file_path: str) -> list[Document]:
     """Load plain text file."""
-    with open(file_path, encoding='utf-8') as f:
+    with open(file_path, encoding="utf-8") as f:
         text = f.read()
     return [Document(content=text, metadata={"source": file_path})] if text else []
 
@@ -66,6 +66,7 @@ def _load_image(file_path: str) -> list[Document]:
     """Load image for vision models."""
     try:
         from PIL import Image
+
         with Image.open(file_path) as img:
             img.verify()
         return [Document(content="", metadata={"source": file_path, "type": "image"})]
@@ -75,7 +76,7 @@ def _load_image(file_path: str) -> list[Document]:
 
 def is_image(file_path: str) -> bool:
     """Check if file is an image."""
-    return file_path.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp'))
+    return file_path.lower().endswith((".png", ".jpg", ".jpeg", ".gif", ".bmp"))
 
 
 def chunk_text(text: str, chunk_size: int = 2000, overlap: int = 200) -> list[str]:
