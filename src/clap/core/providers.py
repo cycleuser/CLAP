@@ -57,18 +57,25 @@ class Provider:
 
 
 class OllamaProvider(Provider):
-    """Local Ollama (native protocol, via the `ollama` package)."""
+    """Ollama over the native protocol (local by default).
 
-    def __init__(self, host: str = "http://127.0.0.1:11434"):
-        self.id = "ollama-local"
+    `host` accepts any ollama-native endpoint (e.g. the ollama.com cloud);
+    `headers` may carry auth (in-memory only, never logged). On this machine
+    no local server runs, so scenario runs must use a reachable host —
+    recorded honestly in results.
+    """
+
+    def __init__(self, host: str = "http://127.0.0.1:11434", headers: dict | None = None, pid: str | None = None):
+        self.id = pid or "ollama-local"
         self.name = "Ollama (local)"
         self.base = host
+        self._headers = dict(headers or {})
         self.last_meta: dict = {}
 
     def _client(self):
         import ollama
 
-        return ollama.Client(host=self.base)
+        return ollama.Client(host=self.base, headers=self._headers) if self._headers else ollama.Client(host=self.base)
 
     def chat(self, messages, model: str, stream: bool = True):
 
