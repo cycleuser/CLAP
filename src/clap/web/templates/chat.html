@@ -65,7 +65,7 @@
 
   <main class="workspace">
     <div class="chat-col">
-      <section class="panel flow" id="flow" aria-live="polite" aria-label="消息流">
+      <section class="panel flow" id="flow" aria-live="polite" data-i18n-aria="chat.flowAria" aria-label="消息流">
         <p class="empty" data-i18n="chat.empty">还没有消息。选好模型后输入问题，按 Enter 发送。</p>
       </section>
 
@@ -156,7 +156,7 @@
   </footer>
 </div>
 
-<aside class="drawer" id="drawer" aria-label="来源">
+<aside class="drawer" id="drawer" data-i18n-aria="drawer.title" aria-label="来源">
   <header>
     <h3 id="drawer-title" data-i18n="drawer.title">来源</h3>
     <button class="icon-btn" id="drawer-close" data-i18n-title="common.close" title="关闭">×</button>
@@ -199,6 +199,7 @@
   let turnNo = 0;
   let branchId = "";
   let zimList = [];
+  let textFiles = [];
   let zimFilter = [];
   let renewSummary = "";
   let lastMessages = [];
@@ -250,15 +251,20 @@
     const msg = lastMessages.find((m) => (m.sources || []).some((s) => String(s.n) === n));
     const src = msg && (msg.sources || []).find((s) => String(s.n) === n);
     if (!src) { toast(T("drawer.notFound", { n: n })); return; }
-    openSource(src.zim, src.path, src.title, question || "");
+    openSource(src.kind || "zim", src.zim, src.path, src.title, question || "");
   }
-  async function openSource(zim, path, title, question) {
+  async function openSource(kind, zim, path, title, question) {
     const drawer = $("drawer");
     $("drawer-title").textContent = title || path;
     $("drawer-body").textContent = T("drawer.loading");
     drawer.classList.add("open");
     try {
-      let url = "/api/zim/article?zim=" + encodeURIComponent(zim) + "&path=" + encodeURIComponent(path);
+      let url;
+      if (kind === "text") {
+        url = "/api/text/article?name=" + encodeURIComponent(path);
+      } else {
+        url = "/api/zim/article?zim=" + encodeURIComponent(zim) + "&path=" + encodeURIComponent(path);
+      }
       if (question) url += "&q=" + encodeURIComponent(question);
       const r = await fetch(url);
       const j = await r.json();
@@ -266,7 +272,11 @@
       $("drawer-title").textContent = j.title || title || path;
       const wrap = $("drawer-body");
       wrap.innerHTML = "";
-      const meta = el("div", "meta", T("drawer.meta", { zim: j.zim, path: j.path, chars: j.chars }));
+      const meta = el("div", "meta", T("drawer.meta", {
+        zim: j.zim || (kind === "text" ? T("text.heading") : ""),
+        path: j.path,
+        chars: j.chars
+      }));
       wrap.appendChild(meta);
       const body = el("div", "body");
       const match = j.match;
@@ -329,14 +339,13 @@
       });
       if (unavailable.length) {
         const og = document.createElement("optgroup");
-        og.label = CLAPi18n.lang === "zh" ? "未配置 / 不可用（不发起调用）" : "Not configured / unavailable (never called)";
+        og.label = T("chat.groupUnavailable");
         unavailable.forEach((g) => {
           const o = document.createElement("option");
           o.disabled = true;
           o.textContent = g.provider + " — " +
-            (g.unsupported ? (CLAPi18n.lang === "zh" ? "协议不支持" : "unsupported protocol")
-              : (g.configured ? (CLAPi18n.lang === "zh" ? "连接失败" : "connection failed")
-                : (CLAPi18n.lang === "zh" ? "未配置" : "not configured")));
+            (g.unsupported ? T("chat.protoUnsupported")
+              : (g.configured ? T("chat.connectionFailed") : T("chat.notConfigured")));
           og.appendChild(o);
         });
         modelSel.appendChild(og);
@@ -503,7 +512,7 @@
         const b = el("button", "src-btn", label.length > 34 ? label.slice(0, 34) + "…" : label);
         b.type = "button";
         b.title = s.zim + " · " + s.path;
-        b.addEventListener("click", () => openSource(s.zim, s.path, s.title, lastQuestion));
+        b.addEventListener("click", () => openSource(s.kind || "zim", s.zim, s.path, s.title, lastQuestion));
         ev.appendChild(b);
       });
       wrap.appendChild(ev);
@@ -527,7 +536,8 @@
   }
 
   // ---------------- session ----------------
-  async function loadSession(branch) {
+  async function loadSession(branch, attempt) {
+    attempt = attempt || 0;
     try {
       const q = branch ? ("?branch=" + encodeURIComponent(branch)) : "";
       const r = await fetch("/api/session/get" + q);
@@ -548,7 +558,7 @@
       kv.innerHTML = "";
       const rows = [
         [T("session.heading"), j.session_id],
-        [CLAPi18n.lang === "zh" ? "消息" : "Messages", lastMessages.length],
+        [T("session.messages"), lastMessages.length],
         [T("annotate.heading"), (j.annotations || []).length],
         [T("branch.heading"), (j.branches || []).length]
       ];
@@ -581,14 +591,47 @@
         list.appendChild(it);
       });
     } catch (e) {
-      setStatus(T("chat.sessionLoadFailed") + e.message, true);
+      const msg = String((e && e.message) || e);
+      const offline = /NetworkError|Failed to fetch|Load failed|network/i.test(msg);
+      if (offline && attempt < 2) {
+        setStatus(T("chat.networkError"), true);
+        setTimeout(() => loadSession(branch, attempt + 1), 1500);
+        return;
+      }
+      setStatus(T("chat.sessionLoadFailed") + msg, true);
     }
+    if (attempt > 0) setStatus(T("chat.status.ready"));
+  }
+
+  async function loadTextSources() {
+    try {
+      const r = await fetch("/api/text/list");
+      const j = await r.json();
+      textFiles = j.files || [];
+      if (textFiles.length) {
+        const kv = $("zim-kv");
+        kv.appendChild(el("dt", "", T("text.heading")));
+        kv.appendChild(el("dd", "", T("text.files", { n: textFiles.length })));
+      }
+    } catch (e) { /* the text library is optional */ }
+  }
+
+  function applyGroundedDefault() {
+    let pref = null;
+    try { pref = localStorage.getItem("clap-grounded"); } catch (e) { /* private mode */ }
+    const hasSources = (zimList && zimList.length > 0) || (textFiles && textFiles.length > 0);
+    // “有资料就默认开启”，但用户手动关掉的选择会被记住
+    groundedEl.checked = pref === null ? !!hasSources : pref === "1";
+    syncModeLine();
   }
 
   function syncModeLine() {
     $("mode-line").textContent = groundedEl.checked ? T("chat.mode.grounded") : T("chat.mode.normal");
   }
-  groundedEl.addEventListener("change", syncModeLine);
+  groundedEl.addEventListener("change", () => {
+    try { localStorage.setItem("clap-grounded", groundedEl.checked ? "1" : "0"); } catch (e) { /* private mode */ }
+    syncModeLine();
+  });
 
   // ---------------- chat ----------------
   function basePayload(sel) {
@@ -1115,7 +1158,7 @@
     const idIn = document.createElement("input");
     idIn.placeholder = T("settings.id");
     const baseIn = document.createElement("input");
-    baseIn.placeholder = "Base URL（如 api.deepseek.com/v1）";
+    baseIn.placeholder = "Base URL";
     const keyIn = document.createElement("input");
     keyIn.type = "password";
     keyIn.placeholder = T("settings.key");
@@ -1208,13 +1251,21 @@
   });
   CLAPi18n.onChange(() => {
     langSel.value = CLAPi18n.lang;
+    document.title = T("app.titleChat");
+    closeModal();
+    $("drawer").classList.remove("open");
+    setStatus(T("chat.status.ready"));
     syncModeLine();
-    loadModels().then(() => loadSession(branchId));
-    loadZims();
+    loadModels()
+      .then(() => Promise.all([loadSession(branchId), loadZims()]))
+      .then(() => loadTextSources());
   });
 
+  document.title = T("app.titleChat");
   syncModeLine();
-  loadModels().then(() => Promise.all([loadSession(), loadZims()]));
+  loadModels().then(() => Promise.all([loadSession(), loadZims()]))
+    .then(() => loadTextSources())
+    .then(applyGroundedDefault);
 })();
 </script>
 </body>

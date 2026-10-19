@@ -12,6 +12,8 @@ html[lang="zh-CN"] [data-lang-block="zh"] { display: block; }
 html[lang="zh-CN"] [data-lang-block="en"] { display: none; }
 html:not([lang="zh-CN"]) [data-lang-block="en"] { display: block; }
 html:not([lang="zh-CN"]) [data-lang-block="zh"] { display: none; }
+html[lang="zh-CN"] .note-lang, html[lang="en"] .note-lang { display: none !important; }
+html:not([lang="zh-CN"]):not([lang="en"]) .note-lang { display: block !important; }
 </style>
 </head>
 <body>
@@ -44,6 +46,7 @@ html:not([lang="zh-CN"]) [data-lang-block="zh"] { display: none; }
   </header>
 
   <main class="docs">
+    <p class="lead note-lang" data-i18n="docs.englishNote" style="display:none">The API reference below is shown in English.</p>
     <!-- ======================= Chinese ======================= -->
     <div data-lang-block="zh">
       <h1>CLAP Web 接口</h1>
@@ -312,7 +315,8 @@ html:not([lang="zh-CN"]) [data-lang-block="zh"] { display: none; }
   themeSel.value = CLAPtheme.mode;
   themeSel.addEventListener("change", () => CLAPtheme.setMode(themeSel.value));
   langSel.addEventListener("change", () => CLAPi18n.setLang(langSel.value));
-  CLAPi18n.onChange(() => { langSel.value = CLAPi18n.lang; });
+  CLAPi18n.onChange(() => { langSel.value = CLAPi18n.lang; document.title = T("app.titleDocs"); });
+  document.title = T("app.titleDocs");
   CLAPi18n.apply();
 })();
 </script>

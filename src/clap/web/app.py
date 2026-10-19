@@ -48,6 +48,7 @@ from clap.core import providers as PR
 from clap.core import renew as RN
 from clap.core import session as SM
 from clap.core import sharing as SH
+from clap.core import text_sources as TX
 from clap.core import timeline as TL
 from clap.core import zim_kb
 from clap.core.knowledge_base import KnowledgeBase
@@ -289,6 +290,36 @@ def _convo(s: dict, branch_id: str, upto_user_turns: int | None = None) -> list[
     return msgs
 
 
+def _merge_evidence(query: str, zim_hits: list, text_hits: list, top_k: int = 6) -> list:
+    """Keep only hits that actually cover the question's content terms.
+
+    Without this, a short acronym («CLAP») can pull unrelated ZIM papers into
+    the context and outrank the one text file that answers the question.
+    """
+    terms: list[str] = []
+    candidates = zim_kb._query_candidates(query)
+    # use the content terms, not the full phrase: the phrase itself almost
+    # never appears verbatim in the evidence
+    for cand in (candidates[1:] or candidates):
+        for token in cand.split():
+            token = token.strip()
+            if len(token) < 2 or token in terms:
+                continue
+            if any(ch in token for ch in "\\{}$^_=<>"):
+                continue
+            terms.append(token)
+    min_cov = 2 if len(terms) >= 2 else 1
+    scored = []
+    for hit in list(zim_hits) + list(text_hits):
+        body = (getattr(hit, "text", "") or "").lower()
+        coverage = sum(1 for t in terms if t.lower() in body)
+        if coverage < min_cov:
+            continue
+        scored.append((coverage, float(getattr(hit, "score", 0) or 0), hit))
+    scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
+    return [hit for _cov, _score, hit in scored[:top_k]]
+
+
 @app.route("/api/models")
 def api_models():
     """Provider-grouped models + env-assembly result (masked, no key values)."""
@@ -462,11 +493,20 @@ def api_chat():
     system_prompt = ""
     if grounded:
         query = msg
+        zim_hits: list = []
+        text_hits: list = []
         try:
-            hits = zim_kb.library().search(query, data.get("zims") or None, top_k=int(data.get("top_k") or GROUNDED_TOP_K))
-            sources, _ = GR.build_context(hits)
+            zim_hits = zim_kb.library().search(
+                query, data.get("zims") or None, top_k=int(data.get("top_k") or GROUNDED_TOP_K)
+            )
         except Exception:
-            hits, sources = [], []
+            pass
+        try:
+            text_hits = TX.library().search(query, top_k=int(data.get("text_top_k") or 3))
+        except Exception:
+            pass
+        hits = _merge_evidence(query, zim_hits, text_hits, top_k=GROUNDED_TOP_K)
+        sources, _ = GR.build_context(hits) if hits else ([], "")
         if sources:
             system_prompt = GR.render_system_prompt(sources)
 
@@ -999,6 +1039,91 @@ def api_zim_suggest():
     except Exception as e:
         return jsonify({"success": False, "error": _scrub(f"{type(e).__name__}: {e}", get_registry())}), 500
     return jsonify({"success": True, "results": items})
+
+
+# --------------------------------------------------------------------------
+# plain-text evidence library (only .txt/.md; nothing else is accepted)
+# --------------------------------------------------------------------------
+
+
+@app.route("/api/text/list")
+def api_text_list():
+    lib = TX.library()
+    try:
+        files = lib.list_files()
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e), "files": []}), 500
+    return jsonify({"success": True, "roots": lib.roots, "files": files})
+
+
+@app.route("/api/text/add", methods=["POST"])
+def api_text_add():
+    """Upload one or more plain-text files (multipart `file`)."""
+    uploads = request.files.getlist("file") or request.files.getlist("files")
+    if not uploads:
+        return jsonify({"success": False, "error": "没有收到文件"}), 400
+    added: list[str] = []
+    skipped: list[str] = []
+    for f in uploads:
+        data = f.read()
+        try:
+            rec = TX.library().add_bytes(f.filename or "note.txt", data)
+            added.append(rec["name"])
+        except ValueError as e:
+            skipped.append(f"{f.filename}: {e}")
+    if not added and skipped:
+        return jsonify({"success": False, "error": skipped[0], "skipped": skipped}), 415
+    return jsonify({"success": True, "added": added, "skipped": skipped, "count": len(added)})
+
+
+@app.route("/api/text/add_path", methods=["POST"])
+def api_text_add_path():
+    body = request.get_json(silent=True) or {}
+    path = (body.get("path") or "").strip()
+    if not path:
+        return jsonify({"success": False, "error": "path 必填"}), 400
+    try:
+        rec = TX.library().add_path(path)
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 415
+    return jsonify({"success": True, **rec})
+
+
+@app.route("/api/text/delete", methods=["POST"])
+def api_text_delete():
+    body = request.get_json(silent=True) or {}
+    name = (body.get("name") or "").strip()
+    if not name:
+        return jsonify({"success": False, "error": "name 必填"}), 400
+    return jsonify({"success": TX.library().delete(name), "name": name})
+
+
+@app.route("/api/text/search", methods=["POST"])
+def api_text_search():
+    body = request.get_json(silent=True) or {}
+    query = (body.get("query") or "").strip()
+    if not query:
+        return jsonify({"success": False, "error": "query 不能为空"}), 400
+    try:
+        hits = TX.library().search(query, top_k=int(body.get("top_k") or 8))
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+    return jsonify({"success": True, "query": query, "results": [h.as_dict() for h in hits]})
+
+
+@app.route("/api/text/article")
+def api_text_article():
+    name = request.args.get("name", "")
+    q = request.args.get("q", "")
+    if not name:
+        return jsonify({"success": False, "error": "name 必填"}), 400
+    try:
+        art = TX.library().article(name, q)
+    except KeyError as e:
+        return jsonify({"success": False, "error": str(e)}), 404
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+    return jsonify({"success": True, **art})
 
 
 # --------------------------------------------------------------------------

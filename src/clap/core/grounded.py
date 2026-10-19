@@ -76,10 +76,12 @@ class Source:
     title: str
     text: str = ""
     score: float = 0.0
+    kind: str = "zim"
 
     def as_dict(self, with_text: bool = False) -> dict:
         d = {
             "n": self.n,
+            "kind": self.kind,
             "zim": self.zim,
             "path": self.path,
             "title": self.title,
@@ -127,6 +129,7 @@ def build_context(hits, max_chars_per: int = 3500) -> tuple[list[Source], str]:
             title=getattr(h, "title", "") or (getattr(h, "path", "") or "").rsplit("/", 1)[-1],
             text=text[:max_chars_per],
             score=float(getattr(h, "score", 0.0) or 0.0),
+            kind=getattr(h, "kind", "zim") or "zim",
         )
         sources.append(src)
         blocks.append(f"[{src.n}] {src.title}（{src.zim} · {src.path}）\n{src.text}")
@@ -175,9 +178,18 @@ def split_sentences(answer: str) -> list[str]:
     if buf:
         merged.append(buf.strip())
     # A citation that sits on its own line («[1]。») belongs to the sentence
-    # above it, not to a new empty sentence.
+    # above it, not to a new empty sentence. Citations that end up at the
+    # START of the next piece («。 [1] 下一句») move back to the previous.
     out: list[str] = []
     for piece in merged:
+        lead = re.match(r"^((?:\[\d+(?:\s*[,，]\s*\d+)*\]\s*)+)", piece)
+        if lead and out:
+            cites = lead.group(1).strip()
+            rest = piece[lead.end():].strip()
+            out[-1] = (out[-1] + " " + cites).strip()
+            if rest:
+                out.append(rest)
+            continue
         bare = strip_citations(piece).strip(" \t，,。.；;：:")
         if not bare and out:
             out[-1] = (out[-1] + " " + piece).strip()

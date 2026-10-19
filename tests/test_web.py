@@ -124,6 +124,10 @@ def client(fake_base, tmp_path, monkeypatch):
     monkeypatch.setattr(webapp, "DEFAULT_PROVIDER", "fake-web")
     # never touch the user's real settings file
     monkeypatch.setenv("CLAP_SETTINGS_PATH", str(tmp_path / "settings.json"))
+    monkeypatch.setenv("CLAP_TEXT_ROOTS", str(tmp_path / "texts"))
+    from clap.core import text_sources as TX
+
+    TX.reset_library()
     from clap.core.knowledge_base import KnowledgeBase
 
     monkeypatch.setattr(webapp, "kb", KnowledgeBase(persist_directory=str(tmp_path / "kb")))
@@ -668,3 +672,91 @@ def test_settings_import_rejects_broken_json(client):
     r = client.post("/api/settings/import", json={"json": "{not json"})
     assert r.status_code == 400
     assert r.get_json()["success"] is False
+
+
+# ---------------------------------------------------------------- text evidence
+
+
+def test_text_upload_accepts_plain_text_and_rejects_other_formats(client):
+    import io
+
+    ok = client.post(
+        "/api/text/add",
+        data={"file": (io.BytesIO("量子力学研究波函数与概率密度。\n".encode("utf-8")), "notes.md")},
+        content_type="multipart/form-data",
+    ).get_json()
+    assert ok["success"] is True and ok["count"] == 1
+
+    bad = client.post(
+        "/api/text/add",
+        data={"file": (io.BytesIO(b"%PDF-1.4 fake"), "paper.pdf")},
+        content_type="multipart/form-data",
+    )
+    assert bad.status_code == 415
+
+    listed = client.get("/api/text/list").get_json()
+    assert [f["name"] for f in listed["files"]] == ["notes.md"]
+
+
+def test_text_search_and_article_match(client):
+    import io
+
+    client.post(
+        "/api/text/add",
+        data={"file": (io.BytesIO("前言\n\n第一章：量子力学研究波函数。\n\n第二章：无关。\n".encode()), "lesson.txt")},
+        content_type="multipart/form-data",
+    )
+    hits = client.post("/api/text/search", json={"query": "量子力学研究波函数"}).get_json()
+    assert hits["success"] is True and hits["results"]
+    hit = hits["results"][0]
+    art = client.get("/api/text/article", query_string={"name": hit["path"], "q": "量子力学研究波函数"}).get_json()
+    assert art["success"] is True
+    assert art["match"] and "量子力学" in art["text"][art["match"]["start"]:art["match"]["end"]]
+
+
+def test_text_add_path_skips_non_text_files(client, tmp_path):
+    d = tmp_path / "docs"
+    d.mkdir()
+    (d / "a.txt").write_text("纯文本资料。", encoding="utf-8")
+    (d / "b.pdf").write_bytes(b"%PDF-1.4")
+    j = client.post("/api/text/add_path", json={"path": str(d)}).get_json()
+    assert j["success"] is True and j["count"] == 1
+    assert j["skipped"] == ["b.pdf"]
+
+
+def test_text_delete(client):
+    import io
+
+    client.post(
+        "/api/text/add",
+        data={"file": (io.BytesIO(b"temp"), "temp.txt")},
+        content_type="multipart/form-data",
+    )
+    j = client.post("/api/text/delete", json={"name": "temp.txt"}).get_json()
+    assert j["success"] is True
+    assert client.get("/api/text/list").get_json()["files"] == []
+
+
+def test_grounded_chat_includes_text_sources(client, monkeypatch):
+    from clap.core import text_sources as TX
+
+    class FakeTextLib:
+        roots = ["/fake"]
+
+        def list_files(self):
+            return []
+
+        def search(self, query, top_k=5):
+            return [TX.TextHit(name="notes.md", path="/fake/notes.md", title="notes",
+                               text="量子力学研究波函数，波函数的模方是概率密度。", snippet="…", score=9.0)]
+
+        def article(self, name, query=""):
+            return {"kind": "text", "name": "notes.md", "path": "/fake/notes.md", "title": "notes",
+                    "text": "量子力学研究波函数，波函数的模方是概率密度。", "chars": 24, "match": None}
+
+    monkeypatch.setattr(webapp.TX, "library", lambda: FakeTextLib())
+    events = _chat(client, {"message": "波函数的模方是什么", "grounded": True, "model": "fake-chat-model"})
+    meta = [e for e in events if e.get("done")][0]["meta"]
+    kinds = [s.get("kind") for s in meta["sources"]]
+    assert "text" in kinds
+    assert any(s["title"] == "notes" for s in meta["sources"])

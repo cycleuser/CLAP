@@ -67,13 +67,18 @@
 <script>{% include "i18n.js" %}</script>
 <script>
 (function () {
+  const T = (k) => CLAPi18n.t(k);
   const langSel = document.getElementById("lang");
   langSel.value = CLAPi18n.lang;
   const themeSel = document.getElementById("theme");
   themeSel.value = CLAPtheme.mode;
   themeSel.addEventListener("change", () => CLAPtheme.setMode(themeSel.value));
   langSel.addEventListener("change", () => CLAPi18n.setLang(langSel.value));
-  CLAPi18n.onChange(() => { langSel.value = CLAPi18n.lang; });
+  CLAPi18n.onChange(() => {
+    langSel.value = CLAPi18n.lang;
+    document.title = "CLAP · " + T("timeline.subtitle");
+  });
+  document.title = "CLAP · " + T("timeline.subtitle");
   CLAPi18n.apply();
 })();
 </script>

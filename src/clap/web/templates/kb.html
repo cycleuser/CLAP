@@ -51,6 +51,20 @@
     <p class="empty" style="padding:16px 20px" data-i18n="common.loading">加载中…</p>
   </section>
 
+  <section class="panel" style="margin:16px 22px 0">
+    <div class="card">
+      <h2><span data-i18n="text.heading">文本资料</span> <span class="hint" data-i18n="text.hint">只接受纯文本（.txt / .md / .markdown / .text）</span></h2>
+      <div class="composer-row">
+        <input type="file" id="text-files" multiple accept=".txt,.md,.markdown,.text" style="font-size:13px;max-width:320px">
+        <button class="btn small" id="text-upload" type="button" data-i18n="text.upload">添加文本文件</button>
+        <span class="spacer"></span>
+        <input id="text-path" data-i18n-placeholder="text.pathPlaceholder" placeholder="文件或目录路径" style="min-width:260px;max-width:420px">
+        <button class="btn ghost small" id="text-add-path" type="button" data-i18n="text.addPath">按路径添加</button>
+      </div>
+      <div class="ann-list" id="text-list" style="max-height:280px"></div>
+    </div>
+  </section>
+
   <section class="kb-work">
     <div class="panel">
       <div class="search-row">
@@ -81,7 +95,9 @@
   const T = (k, v) => CLAPi18n.t(k, v);
   const langSel = $("lang");
   let zims = [];
+  let textFiles = [];
   let lastQuery = "";
+  let currentHit = null;
 
   langSel.value = CLAPi18n.lang;
   const themeSel = document.getElementById("theme");
@@ -171,18 +187,25 @@
     return n;
   }
 
-  async function readArticle(zim, path) {
+  async function readArticle(hit) {
+    currentHit = hit;
+    const isText = hit.kind === "text";
     setStatus(T("kb.reading"));
     try {
-      let url = "/api/zim/article?zim=" + encodeURIComponent(zim) + "&path=" + encodeURIComponent(path);
+      let url;
+      if (isText) {
+        url = "/api/text/article?name=" + encodeURIComponent(hit.path);
+      } else {
+        url = "/api/zim/article?zim=" + encodeURIComponent(hit.zim) + "&path=" + encodeURIComponent(hit.path);
+      }
       if (lastQuery) url += "&q=" + encodeURIComponent(lastQuery);
       const r = await fetch(url);
       const j = await r.json();
       if (!j.success) throw new Error(j.error || T("kb.readFailed"));
       const box = $("reader");
       box.innerHTML = "";
-      box.appendChild(el("h2", "", j.title || path));
-      box.appendChild(el("div", "meta", j.zim + " · " + j.path + " · " + j.chars));
+      box.appendChild(el("h2", "", j.title || hit.path));
+      box.appendChild(el("div", "meta", (j.zim || (isText ? T("text.heading") : "")) + " · " + j.path + " · " + j.chars));
       const body = el("div", "body");
       const match = j.match;
       if (match && match.start < match.end && match.end <= j.text.length) {
@@ -197,8 +220,7 @@
           if (t) t.scrollIntoView({ block: "center", behavior: "smooth" });
         }, 80);
       } else {
-        const hl = highlight(j.text);
-        box.appendChild(hl);
+        box.appendChild(highlight(j.text));
       }
       setStatus(T("kb.opened", { n: j.chars }));
     } catch (e) {
@@ -214,29 +236,39 @@
     $("search-btn").disabled = true;
     setStatus(T("kb.searching"));
     try {
-      const r = await fetch("/api/zim/search", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query, zims: zim ? [zim] : undefined, top_k: 12 })
-      });
-      const j = await r.json();
-      if (!j.success) throw new Error(j.error || T("kb.searchFailed"));
+      const [zr, tr] = await Promise.all([
+        fetch("/api/zim/search", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query, zims: zim ? [zim] : undefined, top_k: 10 })
+        }).then((r) => r.json()),
+        fetch("/api/text/search", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query, top_k: 6 })
+        }).then((r) => r.json()).catch(() => ({ results: [] }))
+      ]);
+      if (!zr.success) throw new Error(zr.error || T("kb.searchFailed"));
+      const results = []
+        .concat((zr.results || []).map((h) => Object.assign({}, h, { kind: "zim" })))
+        .concat(((tr && tr.results) || []).map((h) => Object.assign({}, h, { kind: "text" })));
       const box = $("results");
       box.innerHTML = "";
-      if (!j.results.length) {
+      if (!results.length) {
         box.appendChild(el("p", "empty", T("kb.noMatch")));
         setStatus(T("kb.noMatch"));
         return;
       }
-      j.results.forEach((h) => {
+      results.forEach((h) => {
         const hit = el("div", "hit");
-        hit.appendChild(el("div", "t", h.title || h.path));
-        hit.appendChild(el("div", "p", h.zim + " · " + h.path));
+        const head = el("div", "composer-row");
+        head.appendChild(el("div", "t", h.title || h.path));
+        if (h.kind === "text") head.appendChild(el("span", "chip on", T("text.badge")));
+        hit.appendChild(head);
+        hit.appendChild(el("div", "p", (h.zim || T("text.heading")) + " · " + h.path));
         if (h.snippet) hit.appendChild(el("div", "s", h.snippet));
-        hit.addEventListener("click", () => readArticle(h.zim, h.path));
+        hit.addEventListener("click", () => readArticle(h));
         box.appendChild(hit);
       });
-      setStatus(T("kb.matches", { n: j.results.length }));
+      setStatus(T("kb.matches", { n: results.length }));
     } catch (e) {
       setStatus(T("kb.searchFailed") + e.message, true);
     } finally {
@@ -265,13 +297,90 @@
     }
   });
 
+  // ---------------- text evidence ----------------
+  async function loadTextFiles() {
+    try {
+      const r = await fetch("/api/text/list");
+      const j = await r.json();
+      textFiles = j.files || [];
+      const box = $("text-list");
+      box.innerHTML = "";
+      if (!textFiles.length) {
+        box.appendChild(el("p", "empty", T("text.empty")));
+        return;
+      }
+      textFiles.forEach((f) => {
+        const row = el("div", "ann-item");
+        row.appendChild(el("span", "t", f.name));
+        row.appendChild(el("span", "", f.size_kb + " KB"));
+        const del = el("button", "src-btn", T("text.delete"));
+        del.type = "button";
+        del.addEventListener("click", async () => {
+          if (!confirm(T("text.confirmDelete"))) return;
+          await fetch("/api/text/delete", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: f.name })
+          });
+          loadTextFiles();
+        });
+        row.appendChild(del);
+        box.appendChild(row);
+      });
+    } catch (e) {
+      setStatus(T("text.failed") + e.message, true);
+    }
+  }
+
+  $("text-upload").addEventListener("click", async () => {
+    const files = [...($("text-files").files || [])];
+    if (!files.length) { toast(T("text.formatOnly")); return; }
+    const fd = new FormData();
+    files.forEach((f) => fd.append("file", f, f.name));
+    try {
+      const r = await fetch("/api/text/add", { method: "POST", body: fd });
+      const j = await r.json();
+      if (!j.success) throw new Error(j.error || T("text.formatOnly"));
+      toast(T("text.added", { n: j.count || 0 }));
+      $("text-files").value = "";
+      loadTextFiles();
+    } catch (e) {
+      setStatus(T("text.failed") + e.message, true);
+    }
+  });
+
+  $("text-add-path").addEventListener("click", async () => {
+    const path = $("text-path").value.trim();
+    if (!path) return;
+    try {
+      const r = await fetch("/api/text/add_path", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path })
+      });
+      const j = await r.json();
+      if (!j.success) throw new Error(j.error || T("text.formatOnly"));
+      toast(T("text.added", { n: j.count || 0 }) +
+        (j.skipped && j.skipped.length ? " · " + T("text.skipped", { n: j.skipped.length }) : ""));
+      $("text-path").value = "";
+      loadTextFiles();
+    } catch (e) {
+      setStatus(T("text.failed") + e.message, true);
+    }
+  });
+
   langSel.addEventListener("change", () => CLAPi18n.setLang(langSel.value));
   CLAPi18n.onChange(() => {
     langSel.value = CLAPi18n.lang;
+    document.title = T("app.titleKb");
+    setStatus(T("chat.status.ready"));
     loadZims();
+    loadTextFiles();
+    if (lastQuery) search();
+    if (currentHit) readArticle(currentHit);
   });
 
+  document.title = T("app.titleKb");
   loadZims();
+  loadTextFiles();
 })();
 </script>
 </body>
