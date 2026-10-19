@@ -24,7 +24,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-PROBE_TIMEOUT_S = 5.0
+PROBE_TIMEOUT_S = 8.0
 CHAT_TIMEOUT_S = 120.0
 
 
@@ -257,13 +257,18 @@ def discover_providers() -> dict[str, Provider]:
         providers.setdefault("online", OpenAICompatProvider("online", env_base, env_key, "env-configured online"))
 
     home = Path.home()
+    seen_bases: set[str] = {""}
+    seen_bases.add("http://127.0.0.1:11434")
+    seen_bases.add("http://127.0.0.1:11434/v1")  # ollama-local speaks the native api
+
     # 2. opencode.json
     oc = _load_json(home / ".config" / "opencode" / "opencode.json")
     for pid, cfg in (oc.get("provider") or {}).items():
         opts = (cfg or {}).get("options") or {}
         base = opts.get("baseURL", "")
-        if not base:
+        if not base or base.rstrip("/") in seen_bases:
             continue
+        seen_bases.add(base.rstrip("/"))
         providers.setdefault(pid, OpenAICompatProvider(pid, base, opts.get("apiKey", ""), (cfg or {}).get("name", pid) or pid))
 
     # 3. pi models.json (+ auth.json for keys)
@@ -273,10 +278,15 @@ def discover_providers() -> dict[str, Provider]:
         base = (cfg or {}).get("baseUrl", "")
         if not base:
             continue
+        if base.rstrip("/") in seen_bases:
+            continue
+        seen_bases.add(base.rstrip("/"))
         key = (auth.get(pid) or {}).get("key", "") or cfg.get("apiKey", "")
         providers.setdefault(pid, OpenAICompatProvider(pid, base, key, pid))
 
-    # classify: ollama.com also speaks the OpenAI-compat surface used here
+    # the ollama/ollama-local native tag namespace never means an online provider
+    providers.pop("ollama", None)
+
     return providers
 
 

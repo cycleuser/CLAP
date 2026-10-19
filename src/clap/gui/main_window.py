@@ -215,15 +215,83 @@ class MainWindow(QMainWindow):
         toolbar.addWidget(self.kb_label)
 
     def refresh_models(self):
-        """Refresh model list."""
+        """Refresh model list: local ollama models + available online provider
+        models grouped with a `provider:model` prefix (F6)."""
         current = self.model_combo.currentText()
         self.model_combo.clear()
-        models = get_available_models()
-        self.model_combo.addItems(models)
-        if self.config.chat_model in models:
+        local_models = get_available_models()
+        self.model_combo.addItems(local_models)
+
+        online_items: list[str] = []
+        try:
+            from clap.core.providers import discover_providers
+
+            for pid, prov in discover_providers().items():
+                if pid == "ollama-local":
+                    continue
+                # privacy default: online models shown but flagged; chat-time
+                # routing enforces privacy_mode
+                if self.config.privacy_mode:
+                    continue
+                if prov.is_available():
+                    for m in prov.list_models()[:12]:
+                        online_items.append(f"{pid}:{m}")
+        except Exception:
+            pass
+
+        if online_items:
+
+            self.model_combo.insertSeparator(self.model_combo.count())
+            self.model_combo.addItems(online_items)
+
+        if self.config.chat_model in local_models:
             self.model_combo.setCurrentText(self.config.chat_model)
-        elif current in models:
+        elif current and self.model_combo.findText(current) >= 0:
             self.model_combo.setCurrentText(current)
+
+    def resolve_model_selection(self, selection: str):
+        """Split a combo selection into (ChatThread kwargs, model label).
+
+        `provider:model` selects an online provider; bare names stay local
+        (privacy_mode enforced here: online requests are rewritten to local).
+        """
+        from clap.core.providers import (
+            FallbackRouter,
+            OllamaProvider,
+            discover_providers,
+        )
+
+        provider_name = "ollama-local"
+        provider = None
+        model = selection
+        router = None
+        if self.config.privacy_mode:
+            provider_name, model = "ollama-local", selection
+        else:
+            online_ids = set()
+            try:
+                online_ids = {
+                    pid
+                    for pid, prov in discover_providers().items()
+                    if pid != "ollama-local"
+                }
+            except Exception:
+                pass
+            head = selection.split(":", 1)[0] if ":" in selection else ""
+            if head in online_ids and head not in ("ollama",):  # ollama tags contain colons too
+                pid, _, model = selection.partition(":")
+                try:
+                    registry = discover_providers()
+                    prov = registry.get(pid)
+                    if prov is not None:
+                        provider = prov
+                        provider_name = pid
+                        local = registry.get("ollama-local", OllamaProvider())
+                        if self.config.routing == "fallback":
+                            router = FallbackRouter(prov, local, privacy_mode=False)
+                except Exception:
+                    provider, provider_name, model = None, "ollama-local", selection
+        return provider, provider_name, model, router
 
     def on_model_changed(self, model: str):
         """Handle model change."""
@@ -577,12 +645,15 @@ class MainWindow(QMainWindow):
 
         from clap.core import session as session_mod
 
+        provider, provider_name, model_label, router = self.resolve_model_selection(model)
+        provider_obj = router if router is not None else provider
+
         if self.session is None:
             self.session = self._make_session()
         parent_id = self.messages[-1].get("id") if self.messages else None
         session_mod.append_message(
             self.session, "user", text, parent=parent_id, branch_id=self.active_branch,
-            model=model, provider="ollama-local",
+            model=model_label, provider=provider_name,
         )
         self._refresh_view()
         self.input_edit.clear()
@@ -595,9 +666,11 @@ class MainWindow(QMainWindow):
         api_messages = [{"role": m.get("role"), "content": m.get("content")} for m in self.messages]
         self.chat_thread = ChatThread(
             messages=api_messages,
-            model=model,
+            model=model_label,
             path=self.current_file,
             embed_model=self.config.embed_model,
+            provider=provider_obj,
+            provider_name=provider_name,
         )
         self.chat_thread.new_text.connect(self.on_new_text)
         self.chat_thread.finished.connect(self.on_chat_finished)

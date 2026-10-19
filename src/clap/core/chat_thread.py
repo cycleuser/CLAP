@@ -35,6 +35,7 @@ class ChatThread(QThread):
         path: str = "",
         embed_model: str = "nomic-embed-text:latest",
         client=None,
+        provider=None,
         provider_name: str = "ollama-local",
     ):
         super().__init__()
@@ -43,34 +44,30 @@ class ChatThread(QThread):
         self.path = path
         self.embed_model = embed_model
         self.client = client
+        self.provider = provider  # optional clap provider object (overrides client)
         self.provider_name = provider_name
         self.last_meta: dict = {}
 
     # ------------------------------------------------------------------
-    # unified call layer (client injection point, default = local ollama)
+    # unified call layer (client/provider injection points, default = local ollama)
     # ------------------------------------------------------------------
 
-    def _chat(self, messages: list[dict], model: str | None = None):
-        if self.client is not None:
-            return self.client.chat(model=model or self.model, messages=messages, stream=True)
-        return ollama.chat(model=model or self.model, messages=messages, stream=True)
-
-    def _generate(self, prompt: str, images: list[bytes] | None = None):
-        if self.client is not None:
-            return self.client.generate(model=self.model, prompt=prompt, images=images or [], stream=True)
-        return ollama.generate(model=self.model, prompt=prompt, images=images or [], stream=True)
-
-    def _embed(self, model: str, input_texts: list[str]) -> dict:
-        if self.client is not None:
-            return self.client.embed(model=model, input=input_texts)
-        return ollama.embed(model=model, input=input_texts)
+    @staticmethod
+    def _text_of(chunk) -> str:
+        """Extract text from a chunk (ollama chunk objects or plain str deltas)."""
+        if isinstance(chunk, str):
+            return chunk
+        try:
+            return chunk["message"]["content"]
+        except (KeyError, TypeError, IndexError):
+            return chunk.get("response", "")
 
     def _watch(self, stream, t0: float):
         """Yield chunks unchanged; record provenance when the final chunk passes."""
         try:
             for chunk in stream:
                 try:
-                    if chunk.get("done"):
+                    if not isinstance(chunk, str) and chunk.get("done"):
                         self.last_meta = {
                             "provider": self.provider_name,
                             "model": self.model,
@@ -86,6 +83,38 @@ class ChatThread(QThread):
                 yield chunk
         except Exception:
             raise
+
+    def _capture_provider_meta(self, t0: float):
+        """After a provider-channel turn, pull its recorded usage/latency."""
+        if self.provider is None or self.last_meta:
+            return
+        meta = dict(getattr(self.provider, "last_meta", {}) or {})
+        if meta:
+            meta.setdefault("latency_ms", wall_ms(t0))
+            meta.setdefault("provider", getattr(self.provider, "id", "provider"))
+            meta.setdefault("error", None)
+            self.last_meta = meta
+
+    def _chat(self, messages: list[dict], model: str | None = None):
+        if self.provider is not None:
+            return self.provider.chat(messages=messages, model=model or self.model, stream=True)
+        if self.client is not None:
+            return self.client.chat(model=model or self.model, messages=messages, stream=True)
+        return ollama.chat(model=model or self.model, messages=messages, stream=True)
+
+    def _generate(self, prompt: str, images: list[bytes] | None = None):
+        if self.provider is not None:
+            # online chat endpoints accept the image as a text-only fallback
+            # (vision-over-provider is out of scope); route to plain chat
+            return self.provider.chat(messages=[{"role": "user", "content": prompt}], model=self.model, stream=True)
+        if self.client is not None:
+            return self.client.generate(model=self.model, prompt=prompt, images=images or [], stream=True)
+        return ollama.generate(model=self.model, prompt=prompt, images=images or [], stream=True)
+
+    def _embed(self, model: str, input_texts: list[str]) -> dict:
+        if self.client is not None:
+            return self.client.embed(model=model, input=input_texts)
+        return ollama.embed(model=model, input=input_texts)
 
     def run(self):
         """Execute the chat thread, streaming responses from the model."""
@@ -116,7 +145,8 @@ class ChatThread(QThread):
         t0 = time.time()
         stream = self._generate(prompt=self.messages[-1]["content"], images=[image_data])
         for chunk in self._watch(stream, t0):
-            self.new_text.emit(chunk.get("response", ""))
+            self.new_text.emit(self._text_of(chunk))
+        self._capture_provider_meta(t0)
 
     def _process_svg(self):
         """Process SVG with vision model by rendering to PNG."""
@@ -137,7 +167,8 @@ class ChatThread(QThread):
                     prompt = f"[SVG contains text: {extracted_text}]\n\n{prompt}"
                 t0 = time.time()
                 for chunk in self._watch(self._generate(prompt=prompt, images=[image_data]), t0):
-                    self.new_text.emit(chunk.get("response", ""))
+                    self.new_text.emit(self._text_of(chunk))
+                self._capture_provider_meta(t0)
             else:
                 if extracted_text:
                     prompt = f"[SVG file content]\nText extracted: {extracted_text}\n\nQuestion: {self.messages[-1]['content']}"
@@ -145,7 +176,8 @@ class ChatThread(QThread):
                     for chunk in self._watch(
                         self._chat([{"role": "user", "content": prompt}]), t0
                     ):
-                        self.new_text.emit(chunk["message"]["content"])
+                        self.new_text.emit(self._text_of(chunk))
+                    self._capture_provider_meta(t0)
                 else:
                     self._process_chat()
         except Exception:
@@ -220,7 +252,8 @@ class ChatThread(QThread):
 
             t0 = time.time()
             for chunk in self._watch(self._chat(messages), t0):
-                self.new_text.emit(chunk["message"]["content"])
+                self.new_text.emit(self._text_of(chunk))
+            self._capture_provider_meta(t0)
         except Exception:
             # embedding unavailable -> plain chat fallback (original behaviour)
             self._process_chat()
@@ -229,4 +262,5 @@ class ChatThread(QThread):
         """Process regular chat without file."""
         t0 = time.time()
         for chunk in self._watch(self._chat(self.messages), t0):
-            self.new_text.emit(chunk["message"]["content"])
+            self.new_text.emit(self._text_of(chunk))
+        self._capture_provider_meta(t0)

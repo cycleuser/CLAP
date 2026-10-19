@@ -16,6 +16,11 @@ class CLAPConfig:
     chunk_overlap: int = 200
     persist_directory: str = ""
     language: str = "en"
+    # F6 provider policy (privacy is the default: online disabled until
+    # explicitly turned on by the user)
+    privacy_mode: bool = True
+    routing: str = "manual"  # "manual" | "fallback"
+    online_provider: str = ""  # selected online provider id ("" = none)
 
     def __post_init__(self):
         if not self.persist_directory:

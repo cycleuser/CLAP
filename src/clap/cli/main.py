@@ -84,6 +84,8 @@ Examples:
     replay_p.add_argument("--from-turn", type=int, default=None, dest="force_from")
     replay_p.add_argument("--fresh", action="store_true", help="Ignore existing log, start over")
 
+    sp.add_parser("providers", help="List configured providers (masked keys; F6)")
+
     return parser
 
 
@@ -111,6 +113,8 @@ def main(argv=None):
         return tree_command(args)
     elif args.command == "replay":
         return replay_command(args)
+    elif args.command == "providers":
+        return providers_command(args)
     return interactive_mode()
 
 
@@ -345,6 +349,33 @@ def replay_command(args):
     except Exception as e:
         print(f"Error: {e}")
         return 1
+
+
+# ------------------------------------------------------------------ F6
+
+
+def providers_command(args):
+    """Endpoint inventory: ids, bases, kinds, masked keys (never key values)."""
+    from clap.core.providers import discover_providers, masked_endpoint_table
+
+    try:
+        rows = masked_endpoint_table(discover_providers())
+    except Exception as e:
+        print(f"Error: {e}")
+        return 1
+    import re as _re
+
+    for r in rows:
+        masked = r.get("masked_key") or "<none>"
+        if isinstance(masked, str) and not _re.fullmatch(r"(\*\*\*len\d+…\S{0,6})|<none>", masked):
+            masked = "***"
+        avail = "yes" if r["available"] else "no"
+        print(f"{r['id']:<22} {r['kind']:<14} available={avail:<3} key={masked}")
+        print(f"{'':<22} base={r['base']}")
+        models = r.get("models") or []
+        shown = ", ".join(models[:10])
+        print(f"{'':<22} models[{len(models)}]: {shown}{' …' if len(models) > 10 else ''}")
+    return 0
 
 
 def start_gui():
