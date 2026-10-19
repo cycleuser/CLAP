@@ -35,6 +35,28 @@ from clap.utils.config import get_available_models, is_first_run, load_config, s
 from clap.utils.i18n import set_language, t
 
 
+def _library_index_snapshot() -> list:
+    """History-list entries from the central session library (F1)."""
+    try:
+        from clap.core.sharing import list_library
+
+        entries = list_library()
+        return [
+            {
+                "timestamp": e.get("adopted", ""),
+                "preview": e.get("name", ""),
+                "document": "",
+                "model": e.get("chat_model", ""),
+                "language": "",
+                "messages": [],
+                "file": e.get("file", ""),
+            }
+            for e in entries[:20]
+        ]
+    except Exception:
+        return []
+
+
 class MainWindow(QMainWindow):
     """Main window with PDF reader (left) and chat (right)."""
 
@@ -191,6 +213,14 @@ class MainWindow(QMainWindow):
         self.export_action = QAction(t("export_md"), self)
         self.export_action.triggered.connect(self.export_chat_to_markdown)
         toolbar.addAction(self.export_action)
+
+        self.share_action = QAction(t("share_chat"), self)
+        self.share_action.triggered.connect(self.share_session_package)
+        toolbar.addAction(self.share_action)
+
+        self.adopt_action = QAction(t("adopt_chat"), self)
+        self.adopt_action.triggered.connect(self.adopt_session_package)
+        toolbar.addAction(self.adopt_action)
 
         toolbar.addSeparator()
 
@@ -503,41 +533,8 @@ class MainWindow(QMainWindow):
         if not path:
             return
 
-        from clap.core import session as session_mod
-
         try:
-            s = session_mod.load_session(path)
-            self.session = s
-            main = session_mod.main_branch(s)
-            self.active_branch = main.get("id")
-            self.messages = session_mod.branch_path(s, self.active_branch or "b1")
-            if not self.messages:  # empty session: view may be empty list
-                self.messages = []
-
-            try:
-                doc_path = (s.get("manifest", {}).get("document") or {}).get("path", "")
-                legacy_doc = s.get("manifest", {}).get("document", {}).get("name", "")
-                self.current_file = doc_path if doc_path and os.path.exists(doc_path) else (
-                    legacy_doc if legacy_doc and os.path.exists(legacy_doc) else ""
-                )
-            except Exception:
-                self.current_file = ""
-
-            model = s.get("manifest", {}).get("chat_model", "")
-            if model:
-                self.config.chat_model = model
-                self.model_combo.setCurrentText(model)
-
-            lang = s.get("language", "")
-            if lang:
-                self.config.language = lang
-                set_language(lang)
-
-            self._render_messages()
-            self.doc_label.setText(
-                os.path.basename(self.current_file) if self.current_file else t("no_document")
-            )
-            self.update_status()
+            self._apply_loaded_session(path)
             self.status_bar.showMessage(f"{t('loaded')}: {os.path.basename(path)}")
         except Exception as e:
             QMessageBox.warning(self, t("error"), f"{t('failed_load')}: {e}")
@@ -565,6 +562,75 @@ class MainWindow(QMainWindow):
         bid = self.active_branch or session_mod.main_branch(self.session).get("id")
         self.active_branch = bid
         self.messages = session_mod.branch_path(self.session, bid)
+
+    # ---------------------------------------------------------------- F1
+
+    def share_session_package(self):
+        """Export the current/selected .clap as a shareable package."""
+        path, _ = QFileDialog.getOpenFileName(
+            self, t("load_conversation"), "", "CLAP Chat (*.clap);;All Files (*)"
+        )
+        if not path:
+            return
+        try:
+            from clap.core import sharing
+
+            pkg = sharing.pack(path)
+            self.status_bar.showMessage(f"{t('shared')}: {pkg.name}")
+        except Exception as e:
+            QMessageBox.warning(self, t("error"), f"{t('share_failed')}: {e}")
+
+    def adopt_session_package(self):
+        """Adopt a .clapshare package into the local session library."""
+        path, _ = QFileDialog.getOpenFileName(
+            self, t("adopt_chat"), "", t("share_files") + ";;All Files (*)"
+        )
+        if not path:
+            return
+        try:
+            from clap.core import sharing
+
+            r = sharing.adopt(path)
+            self.status_bar.showMessage(f"{t('adopted')}: {r['session_id']}")
+            self._apply_loaded_session(r["path"])
+        except Exception as e:
+            QMessageBox.warning(self, t("error"), f"{t('adopt_failed')}: {e}")
+
+    def _apply_loaded_session(self, path: str):
+        """Common body of load_chat_from_file for a concrete path."""
+        from clap.core import session as session_mod
+
+        s = session_mod.load_session(path)
+        self.session = s
+        main = session_mod.main_branch(s)
+        self.active_branch = main.get("id")
+        self.messages = session_mod.branch_path(s, self.active_branch or "b1")
+
+        try:
+            doc = s.get("manifest", {}).get("document") or {}
+            doc_path = doc.get("path", "")
+            self.current_file = (
+                doc_path if doc_path and os.path.exists(doc_path) and doc_path != "<stripped-for-share>" else ""
+            )
+        except Exception:
+            self.current_file = ""
+
+        model = s.get("manifest", {}).get("chat_model", "")
+        if model:
+            self.config.chat_model = model
+            self.model_combo.setCurrentText(model)
+
+        lang = s.get("language", "")
+        if lang:
+            self.config.language = lang
+            set_language(lang)
+
+        self._update_history_list(_library_index_snapshot())
+        self._render_messages()
+        self.doc_label.setText(
+            os.path.basename(self.current_file) if self.current_file else t("no_document")
+        )
+        self.update_status()
 
     def export_chat_to_markdown(self):
         """Export conversation to a markdown file."""
@@ -719,7 +785,7 @@ class MainWindow(QMainWindow):
         self.save_history()
 
     def save_history(self):
-        """Save chat history to file."""
+        """Save chat history to file + central session library (F1)."""
         if not self.messages:
             return
 
@@ -764,6 +830,32 @@ class MainWindow(QMainWindow):
         with open(self.history_path, "w", encoding="utf-8") as f:
             json.dump(history[:50], f, ensure_ascii=False, indent=2)
 
+        # central session library: register own session (best effort)
+        try:
+            from clap.core import session as session_mod
+            from clap.core import sharing
+
+            if self.session is None:
+                self.session = self._make_session()
+                parent = None
+                for m in self.messages:
+                    node = session_mod.append_message(
+                        self.session, m.get("role", "user"), m.get("content", ""),
+                        parent=parent, branch_id=self.active_branch,
+                        model=m.get("model"), provider=m.get("provider"),
+                        latency_ms=m.get("latency_ms"), tokens=m.get("tokens"),
+                        error=m.get("error"),
+                    )
+                    parent = node["id"]
+                session_mod.ensure_main_branch(self.session)
+            # refresh the manifest's live chat model snapshot
+            self.session["manifest"]["chat_model"] = self.session["manifest"].get("chat_model") or self.config.chat_model
+            sharing.save_to_library(self.session)
+            self._update_history_list(_library_index_snapshot() or history[:50])
+            return
+        except Exception:
+            pass
+
         self._update_history_list(history)
 
     def load_history(self):
@@ -799,6 +891,11 @@ class MainWindow(QMainWindow):
 
             if 0 <= idx < len(history):
                 session = history[idx]
+                # library entries carry a file: load the real session file
+                if session.get("file") and Path(session["file"]).exists():
+                    self._apply_loaded_session(session["file"])
+                    self.status_bar.showMessage(f"{t('loaded')}: {os.path.basename(session['file'])}")
+                    return
                 self.session = None  # history.json is flat; rebuild on save
                 self.active_branch = None
                 self.messages = session.get("messages", [])

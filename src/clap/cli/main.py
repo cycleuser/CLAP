@@ -86,6 +86,19 @@ Examples:
 
     sp.add_parser("providers", help="List configured providers (masked keys; F6)")
 
+    share_p = sp.add_parser("share", help="Create a shareable session package (F1)")
+    share_p.add_argument("file", help=".clap file")
+    share_p.add_argument("--out", default=None, help="Output directory (default: alongside file)")
+
+    adopt_p = sp.add_parser("adopt", help="Adopt a .clapshare package into the library (F1)")
+    adopt_p.add_argument("package", help=".clapshare package file")
+    adopt_p.add_argument("--policy", choices=["rename", "overwrite", "fork"], default="rename")
+    adopt_p.add_argument("--dir", default=None, help="Library directory (default ~/.clap/sessions)")
+
+    sess_p = sp.add_parser("sessions", help="Session library operations (F1)")
+    sess_sp = sess_p.add_subparsers(dest="sessions_command")
+    sess_sp.add_parser("list", help="List library sessions")
+
     return parser
 
 
@@ -115,6 +128,12 @@ def main(argv=None):
         return replay_command(args)
     elif args.command == "providers":
         return providers_command(args)
+    elif args.command == "share":
+        return share_command(args)
+    elif args.command == "adopt":
+        return adopt_command(args)
+    elif args.command == "sessions":
+        return sessions_command(args)
     return interactive_mode()
 
 
@@ -376,6 +395,53 @@ def providers_command(args):
         shown = ", ".join(models[:10])
         print(f"{'':<22} models[{len(models)}]: {shown}{' …' if len(models) > 10 else ''}")
     return 0
+
+
+# ------------------------------------------------------------------ F1
+
+
+def share_command(args):
+    from clap.core import sharing
+
+    try:
+        pkg = sharing.pack(args.file, args.out)
+        man = sharing.read_manifest(pkg)
+        print(f"Package: {pkg}")
+        print(f"  session_id: {man['session_id']}")
+        print(f"  session_sha256: {man['session_sha256']}")
+        print(f"  counts: {man['counts']}")
+        return 0
+    except Exception as e:
+        print(f"Error: {e}")
+        return 1
+
+
+def adopt_command(args):
+    from clap.core import sharing
+
+    try:
+        r = sharing.adopt(args.package, policy=args.policy, library=args.dir)
+        print(f"Adopted: session_id={r['session_id']} path={r['path']} policy={r['policy']} verified={r['verified']}")
+        return 0
+    except Exception as e:
+        print(f"Error: {e}")
+        return 1
+
+
+def sessions_command(args):
+    from clap.core import sharing
+
+    if getattr(args, "sessions_command", None) == "list":
+        entries = sharing.list_library(args.dir)
+        if not entries:
+            print("(session library empty)")
+            return 0
+        for e in entries[:20]:
+            tag = "shared" if e.get("shared") else "own"
+            print(f"  {e['session_id']}  [{tag}]  {e.get('purpose', ''):<6} turns={e.get('messages', 0)}  {e.get('name', '')}")
+        return 0
+    print("Usage: clap sessions list")
+    return 1
 
 
 def start_gui():
