@@ -1,66 +1,124 @@
-"""CLI interface for CLAP."""
+"""CLI interface for CLAP.
+
+Public command functions (`*_command` / `*_mode`) are dispatched by
+`clap.__main__` (the real `clap` entrypoint). Session-centric subcommands
+(fork/tree/replay/share/adopt/sessions/visualize/annotate/...) are the
+CLAP-NEXT session features (see spec-session-features.md).
+"""
 
 import argparse
 import sys
 
-import ollama
-
 from clap import __version__
-from clap.core.knowledge_base import KnowledgeBase
 
 
-def main():
-    """Main CLI entry point."""
-    parser = argparse.ArgumentParser(prog="clap", description="CLAP - Chat Local And Persistent")
+def build_parser() -> argparse.ArgumentParser:
+    """Build the full CLI parser (single source of truth for the entrypoint)."""
+    parser = argparse.ArgumentParser(
+        prog="clap",
+        description="CLAP - Chat Local And Persistent. Local LLM conversation tool with Ollama.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  clap                  Start interactive CLI mode
+  clap --gui            Start GUI mode
+  clap --web            Start web server
+  clap chat "Hello"     Send a single message
+  clap models           List available Ollama models
+  clap kb index doc.pdf Index a document into knowledge base
+  clap fork s.clap --at m6 --name 提高 --model deepseek-chat
+  clap tree s.clap      Show branches and turns
+  clap replay s.clap --branch b2 --model deepseek-chat --log replay.jsonl
+  clap share s.clap     Create a shareable session package
+  clap adopt s.clapshare --policy rename
+  clap sessions list    Show the local session library
+  clap visualize s.clap --out timeline.html
+  clap annotate s.clap --target m3 --kind keypoint --tags 兼语句
+  clap annotate-export s.clap --format csv
+        """,
+    )
     parser.add_argument("-V", "--version", action="version", version=f"clap-llm {__version__}")
-    subparsers = parser.add_subparsers(dest="cmd")
+    parser.add_argument("-g", "--gui", action="store_true", help="Start GUI mode")
+    parser.add_argument("-w", "--web", action="store_true", help="Start web server mode")
+    parser.add_argument("--host", default="0.0.0.0", help="Host for web server")
+    parser.add_argument("--port", type=int, default=5000, help="Port for web server")
 
-    chat_p = subparsers.add_parser("chat", help="Chat with LLM")
+    sp = parser.add_subparsers(dest="command", help="Available commands")
+
+    chat_p = sp.add_parser("chat", help="Send a single message")
     chat_p.add_argument("message", nargs="*", help="Message")
-    chat_p.add_argument("-m", "--model", help="Model")
+    chat_p.add_argument("--model", "-m", help="Model")
 
-    subparsers.add_parser("models", help="List models")
+    sp.add_parser("models", help="List available Ollama models")
+    sp.add_parser("interactive", help="Start interactive chat mode")
 
-    kb_p = subparsers.add_parser("kb", help="Knowledge base")
-    kb_sp = kb_p.add_subparsers(dest="kb_cmd")
-    idx = kb_sp.add_parser("index", help="Index document")
-    idx.add_argument("path", help="File path")
-    sch = kb_sp.add_parser("search", help="Search")
+    kb_p = sp.add_parser("kb", help="Knowledge base operations")
+    kb_sp = kb_p.add_subparsers(dest="kb_command", help="KB subcommands")
+    idx = kb_sp.add_parser("index", help="Index a document")
+    idx.add_argument("path", help="Path to document")
+    sch = kb_sp.add_parser("search", help="Search knowledge base")
     sch.add_argument("query", help="Query")
-    sch.add_argument("-k", type=int, default=5)
-    kb_sp.add_parser("stats", help="Stats")
-    kb_sp.add_parser("clear", help="Clear")
+    sch.add_argument("-k", type=int, default=5, help="Number of results")
+    kb_sp.add_parser("stats", help="Show knowledge base stats")
+    kb_sp.add_parser("clear", help="Clear knowledge base")
 
-    args = parser.parse_args()
+    fork_p = sp.add_parser("fork", help="Fork a session at a message (F2)")
+    fork_p.add_argument("file", help=".clap file")
+    fork_p.add_argument("--at", required=True, help="Message id to fork at")
+    fork_p.add_argument("--model", default=None, help="Model override for the branch")
+    fork_p.add_argument("--name", default="", help="Branch name")
+    fork_p.add_argument("--note", default="", help="Why this fork exists")
+    fork_p.add_argument("--out", default=None, help="Write to a new file instead of in-place")
 
-    if args.cmd == "chat":
-        return _chat(args)
-    elif args.cmd == "models":
-        return _models()
-    elif args.cmd == "kb":
-        return _kb(args)
-    else:
-        return _interactive()
+    tree_p = sp.add_parser("tree", help="Show branches and their paths (F2)")
+    tree_p.add_argument("file", help=".clap file")
+
+    return parser
 
 
-def _chat(args):
-    msg = " ".join(args.message) if args.message else None
-    if not msg:
-        print('Usage: clap chat "your message"')
-        return 1
+def main(argv=None):
+    """Dispatcher used by `clap` entrypoint (clap/__main__.py)."""
+    parser = build_parser()
+    args = parser.parse_args(argv)
 
+    if args.gui:
+        return start_gui()
+    if args.web:
+        return start_web(args.host, args.port)
+
+    if args.command == "chat":
+        return chat_command(args)
+    elif args.command == "models":
+        return models_command(args)
+    elif args.command == "interactive":
+        return interactive_mode()
+    elif args.command == "kb":
+        return kb_command(args)
+    elif args.command == "fork":
+        return fork_command(args)
+    elif args.command == "tree":
+        return tree_command(args)
+    return interactive_mode()
+
+
+# ------------------------------------------------------------------ core
+
+
+def chat_command(args):
     try:
-        models = [m["model"] for m in ollama.list().get("models", [])]
+        import ollama as ollama_lib
+
+        msg = " ".join(args.message) if getattr(args, "message", None) else None
+        if not msg:
+            print('Usage: clap chat "your message"')
+            return 1
+        models = [m["model"] for m in ollama_lib.list().get("models", [])]
         if not models:
             print("No models found. Install Ollama.")
             return 1
-
         model = args.model if args.model in models else models[0]
         print(f"Model: {model}\nYou: {msg}\nAI: ", end="", flush=True)
-
-        for chunk in ollama.chat(
-            model=model, messages=[{"role": "user", "content": msg}], stream=True
-        ):
+        for chunk in ollama_lib.chat(model=model, messages=[{"role": "user", "content": msg}], stream=True):
             print(chunk["message"]["content"], end="", flush=True)
         print()
         return 0
@@ -69,9 +127,11 @@ def _chat(args):
         return 1
 
 
-def _models():
+def models_command(args):
     try:
-        models = [m["model"] for m in ollama.list().get("models", [])]
+        import ollama as ollama_lib
+
+        models = [m["model"] for m in ollama_lib.list().get("models", [])]
         if not models:
             print("No models found.")
             return 1
@@ -84,50 +144,51 @@ def _models():
         return 1
 
 
-def _kb(args):
-    kb = KnowledgeBase()
+def kb_command(args):
+    from clap.core.knowledge_base import KnowledgeBase
 
-    if args.kb_cmd == "index":
+    kb = KnowledgeBase()
+    cmd = getattr(args, "kb_command", None)
+    if cmd == "index":
         r = kb.index_document(args.path)
-        print(
-            f"Indexed {r.get('chunks', 0)} chunks"
-            if r.get("success")
-            else f"Error: {r.get('error')}"
-        )
-    elif args.kb_cmd == "search":
+        print(f"Indexed {r.get('chunks', 0)} chunks" if r.get("success") else f"Error: {r.get('error')}")
+    elif cmd == "search":
         for i, r in enumerate(kb.search(args.query, args.k), 1):
             print(f"{i}. [{r['score']:.2f}] {r['content'][:100]}...")
-    elif args.kb_cmd == "stats":
+    elif cmd == "stats":
         s = kb.get_stats()
         print(f"Chunks: {s.get('chunks', 0)}")
-    elif args.kb_cmd == "clear":
+    elif cmd == "clear":
         kb.clear()
         print("Cleared.")
+    else:
+        print("Usage: clap kb {index,search,stats,clear}")
+        return 1
     return 0
 
 
-def _interactive():
+def interactive_mode():
     try:
-        models = [m["model"] for m in ollama.list().get("models", [])]
+        import ollama as ollama_lib
+
+        models = [m["model"] for m in ollama_lib.list().get("models", [])]
         if not models:
             print("No models found. Install Ollama.")
             return 1
 
         print(f"CLAP - Models: {', '.join(models)}")
         print("Type 'quit' to exit.\n")
-
         for i, m in enumerate(models, 1):
             print(f"  {i}. {m}")
 
         try:
             idx = int(input("\nSelect model [1]: ") or "1") - 1
             model = models[idx] if 0 <= idx < len(models) else models[0]
-        except ValueError:
+        except (ValueError, EOFError):
             model = models[0]
 
         print(f"\nUsing: {model}\n")
         messages = []
-
         while True:
             try:
                 user = input("You: ").strip()
@@ -138,22 +199,95 @@ def _interactive():
 
                 messages.append({"role": "user", "content": user})
                 print("AI: ", end="", flush=True)
-
                 full = ""
-                for chunk in ollama.chat(model=model, messages=messages, stream=True):
+                for chunk in ollama_lib.chat(model=model, messages=messages, stream=True):
                     text = chunk["message"]["content"]
                     print(text, end="", flush=True)
                     full += text
                 print()
                 messages.append({"role": "assistant", "content": full})
-
             except KeyboardInterrupt:
                 print("\n")
                 break
-
         return 0
     except Exception as e:
         print(f"Error: {e}")
+        return 1
+
+
+# ------------------------------------------------------------------ F2
+
+
+def fork_command(args):
+    from clap.core import session as session_mod
+
+    try:
+        s = session_mod.load_session(args.file)
+        branch = session_mod.fork_branch(
+            s, args.at, name=args.name, model=args.model, note=args.note, author="cli"
+        )
+        out = args.out or args.file
+        session_mod.save_session(s, out)
+        print(
+            f"Forked branch {branch['id']} ({branch['name'] or 'unnamed'}) at {branch['fork_at']}"
+            f"{' [model=' + branch['model'] + ']' if branch['model'] else ''} -> {out}"
+        )
+        return 0
+    except Exception as e:
+        print(f"Error: {e}")
+        return 1
+
+
+def tree_command(args):
+    from clap.core import session as session_mod
+
+    try:
+        s = session_mod.load_session(args.file)
+    except Exception as e:
+        print(f"Error: {e}")
+        return 1
+    man = s.get("manifest", {})
+    print(
+        f"session {man.get('session_id', '?')} | chat_model={man.get('chat_model', '?')}"
+        f" | messages={len(s['messages'])} | branches={len(s.get('branches', []))}"
+        f" | annotations={len(s.get('annotations', []))}"
+    )
+    for b in s.get("branches", []):
+        own = session_mod.branch_path(s, b["id"])
+        ctx = session_mod.branch_full_path(s, b["id"])
+        model = b.get("model") or man.get("chat_model", "?")
+        print(
+            f"  {b['id']} {b['name'] or '(unnamed)'}: root={b.get('root')}"
+            f" fork_at={b.get('fork_at')} model={model} turns={len(own)} (context {len(ctx)})"
+        )
+        for m in own:
+            ann = m.get("annotations") or []
+            prev = (m.get("content") or "")[:40].replace("\n", " ")
+            ann_note = f" [{len(ann)} ann]" if ann else ""
+            print(f"    {m['id']:<6} {m.get('role', '?'):<9} {prev}{ann_note}")
+    return 0
+
+
+def start_gui():
+    try:
+        from clap.gui.main_window import main as gui_main
+
+        return gui_main()
+    except ImportError as e:
+        print(f"Error importing GUI components: {e}")
+        print("Please ensure PySide6 is installed: pip install PySide6")
+        return 1
+
+
+def start_web(host, port):
+    try:
+        from clap.web.app import main as web_main
+
+        sys.argv = ["clap", "--host", host, "--port", str(port)]
+        return web_main()
+    except ImportError as e:
+        print(f"Error: Web mode requires Flask. {e}")
+        print("Install with: pip install clap-llm[web]")
         return 1
 
 
