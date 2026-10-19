@@ -4,136 +4,317 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="color-scheme" content="light dark">
-<title>CLAP · 接口文档</title>
-<style>{% include "app.css" %}</style>
+<title>CLAP · API</title>
+<script>{% include "theme.js" %}</script>
+<style>{% include "app.css" %}
+[data-lang-block] { display: none; }
+html[lang="zh-CN"] [data-lang-block="zh"] { display: block; }
+html[lang="zh-CN"] [data-lang-block="en"] { display: none; }
+html:not([lang="zh-CN"]) [data-lang-block="en"] { display: block; }
+html:not([lang="zh-CN"]) [data-lang-block="zh"] { display: none; }
+</style>
 </head>
 <body>
 <div class="app">
   <header class="topbar">
-    <div class="brand"><strong>CLAP</strong><span>接口文档</span></div>
+    <div class="brand"><strong>CLAP</strong><span data-i18n="app.docsSubtitle">接口文档</span></div>
+    <select id="lang" class="model-select" style="min-width:96px;max-width:120px" title="Language">
+      <option value="zh">中文</option>
+      <option value="en">English</option>
+      <option value="ja">日本語</option>
+      <option value="fr">Français</option>
+      <option value="ru">Русский</option>
+      <option value="de">Deutsch</option>
+      <option value="es">Español</option>
+      <option value="pt">Português</option>
+      <option value="it">Italiano</option>
+      <option value="ko">한국어</option>
+    </select>
+    <select id="theme" class="model-select" style="min-width:110px;max-width:150px" data-i18n-aria="theme.label" title="Theme">
+      <option value="auto" data-i18n="theme.auto">跟随系统</option>
+      <option value="light" data-i18n="theme.light">浅色</option>
+      <option value="dark" data-i18n="theme.dark">深色</option>
+    </select>
     <nav class="nav">
-      <a href="/">对话</a>
-      <a href="/kb">知识库</a>
-      <a href="/timeline">时间轴</a>
-      <a href="/api-docs" class="on">接口文档</a>
+      <a href="/" data-i18n="nav.chat">对话</a>
+      <a href="/kb" data-i18n="nav.kb">知识库</a>
+      <a href="/timeline" data-i18n="nav.timeline">时间轴</a>
+      <a href="/api-docs" class="on" data-i18n="nav.api">接口</a>
     </nav>
   </header>
 
   <main class="docs">
-    <h1>CLAP Web 接口</h1>
-    <p class="lead">所有模型调用都经由 provider 层，端点是 OpenAI 兼容的 HTTP API；
-      凭证只从环境变量（<code>*_API_KEY</code> / <code>*_TOKEN</code> / <code>*_KEY</code>）、
-      <code>~/.config/opencode/opencode.json</code>、<code>~/.pi/agent/auth.json</code> 内存读取，
-      接口只返回掩码。</p>
+    <!-- ======================= Chinese ======================= -->
+    <div data-lang-block="zh">
+      <h1>CLAP Web 接口</h1>
+      <p class="lead">所有模型调用都经由服务商层，端点是 OpenAI 兼容的 HTTP API。
+        凭证只从环境变量（<code>*_API_KEY</code> / <code>*_TOKEN</code> / <code>*_KEY</code>）、
+        <code>~/.config/opencode/opencode.json</code>、<code>~/.pi/agent/auth.json</code> 读入内存，
+        接口只返回掩码。</p>
 
-    <section>
-      <h2>对话与模型</h2>
-      <table>
-        <thead><tr><th>方法</th><th>路径</th><th>说明</th></tr></thead>
-        <tbody>
-          <tr><td class="method">GET</td><td><code>/api/models</code></td>
-              <td>按 provider 分组的模型清单；含环境变量装配结果（<code>env_assembly</code>）、掩码凭证、可用性与默认选择。</td></tr>
-          <tr><td class="method">POST</td><td><code>/api/chat</code></td>
-              <td>SSE 流式对话。请求体 <code>{"message","provider","model","branch","lane","grounded","zims","top_k","renew_summary"}</code>；
-                  事件依次为 <code>start</code> →（有依据模式）<code>sources</code> → 若干 <code>delta</code> → <code>done</code>
-                  （含延迟、token 用量、来源清单、逐句审计 <code>audit</code>、错误）。
-                  有依据模式：先检索 ZIM，材料为空时直接弃答「来源未提及」。</td></tr>
-          <tr><td class="method">POST</td><td><code>/api/chat/stop</code></td>
-              <td>暂停流（对话暂停）。请求体 <code>{"stream_id"}</code>，留空则暂停当前全部在跑流；
-                  已生成文本保留，会话中记为 <code>error:"cancelled"</code>。</td></tr>
-        </tbody>
-      </table>
-    </section>
+      <section>
+        <h2>对话与模型</h2>
+        <table>
+          <thead><tr><th>方法</th><th>路径</th><th>说明</th></tr></thead>
+          <tbody>
+            <tr><td class="method">GET</td><td><code>/api/models</code></td>
+                <td>按服务商分组的模型清单；含环境变量装配结果（<code>env_assembly</code>）、掩码凭证、可用性与默认选择。</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/chat</code></td>
+                <td>流式对话（SSE）。请求体 <code>{"message","provider","model","branch","lane","grounded","zims","top_k","renew_summary","mode","message_id","lang"}</code>；
+                    <code>mode</code>：<code>send</code>（新提问）、<code>regenerate</code>（对 <code>message_id</code> 重新回答，旧答案被替换）、
+                    <code>edit</code>（用 <code>message</code> 改写该提问并重答）。
+                    事件依次为 <code>start</code> →（有依据模式）<code>sources</code> → 若干 <code>delta</code> → <code>done</code>
+                    （含延迟、token 用量、来源清单、逐句核对结果 <code>audit</code>、错误）。
+                    有依据模式下先检索 ZIM，检索不到材料时直接回答「来源未提及」，不调用模型。
+                    界面支持中英日法俄德西葡意韩十种语言与浅色/深色/跟随系统三种主题。</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/chat/stop</code></td>
+                <td>暂停生成。请求体 <code>{"stream_id"}</code>；留空则暂停当前全部在跑的流。
+                    已生成的文字会保留，会话中记为 <code>error:"cancelled"</code>。</td></tr>
+          </tbody>
+        </table>
+      </section>
 
-    <section>
-      <h2>会话</h2>
-      <table>
-        <thead><tr><th>方法</th><th>路径</th><th>说明</th></tr></thead>
-        <tbody>
-          <tr><td class="method">GET</td><td><code>/api/session/get</code></td>
-              <td>当前内存会话：主线消息、分支、标注、隐私切换记录。</td></tr>
-          <tr><td class="method">POST</td><td><code>/api/session/new</code></td><td>新建空会话。</td></tr>
-          <tr><td class="method">POST</td><td><code>/api/session/save</code></td>
-              <td>保存为 v2 <code>.clap</code>。请求体 <code>{"path"}</code>。</td></tr>
-          <tr><td class="method">POST</td><td><code>/api/session/load</code></td>
-              <td>加载 <code>.clap</code>（v1 自动无损迁移）。请求体 <code>{"path"}</code>。</td></tr>
-          <tr><td class="method">POST</td><td><code>/api/session/fork</code></td>
-              <td>在某条消息处分叉。请求体 <code>{"at","name","model","note"}</code>。</td></tr>
-          <tr><td class="method">POST</td><td><code>/api/session/export</code></td>
-              <td>导出当前分支。请求体 <code>{"format":"md|html|json","branch","path"}</code>；
-                  返回 <code>content</code> 与已写入的 <code>path</code>。HTML 零外链。</td></tr>
-          <tr><td class="method">POST</td><td><code>/api/session/share</code></td>
-              <td>打包为 <code>.clapshare</code>（不含密钥与本机路径）。</td></tr>
-          <tr><td class="method">POST</td><td><code>/api/session/adopt</code></td>
-              <td>导入分享包。请求体 <code>{"package","policy":"rename|overwrite|fork"}</code>。</td></tr>
-          <tr><td class="method">POST</td><td><code>/api/session/renew</code></td>
-              <td>会话续期：生成确定性摘要（消息数、轮次、标注要点），返回 <code>summary</code>；
-                  下一条对话把它作为 system 桥接消息携带。</td></tr>
-        </tbody>
-      </table>
-    </section>
+      <section>
+        <h2>会话</h2>
+        <table>
+          <thead><tr><th>方法</th><th>路径</th><th>说明</th></tr></thead>
+          <tbody>
+            <tr><td class="method">GET</td><td><code>/api/session/get?branch=</code></td>
+                <td>当前会话：指定分支的消息（含共同主线）、分支、标注、续期记录。</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/session/new</code></td><td>新建空会话。</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/session/save</code></td>
+                <td>保存为 v2 <code>.clap</code>。请求体 <code>{"path"}</code>。</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/session/load</code></td>
+                <td>加载 <code>.clap</code>（v1 自动无损迁移）。请求体 <code>{"path"}</code>。</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/session/fork</code></td>
+                <td>在某条消息处分叉。请求体 <code>{"at","name","model","note"}</code>。</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/session/export</code></td>
+                <td>导出当前分支。请求体 <code>{"format":"md|html|json","branch","path"}</code>；
+                    返回 <code>content</code> 和写入的 <code>path</code>。HTML 是单文件，不引用任何外部资源。</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/session/share</code></td>
+                <td>打包成 <code>.clapshare</code>（不含密钥与本机路径）。</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/session/adopt</code></td>
+                <td>导入分享包。请求体 <code>{"package","policy":"rename|overwrite|fork"}</code>。</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/session/renew</code></td>
+                <td>会话续期：不调用模型，直接生成摘要（轮次、内容要点、标注）。返回 <code>summary</code>，
+                    下一条对话会把它作为系统消息带上去。</td></tr>
+          </tbody>
+        </table>
+      </section>
 
-    <section>
-      <h2>ZIM 外置知识库（有依据模式）</h2>
-      <table>
-        <thead><tr><th>方法</th><th>路径</th><th>说明</th></tr></thead>
-        <tbody>
-          <tr><td class="method">GET</td><td><code>/api/zim/list</code></td>
-              <td>列出 <code>CLAP_ZIM_ROOTS</code>（默认 <code>~/Documents/重点文献</code>）下的 ZIM：条目数、体积、语言、可读性。</td></tr>
-          <tr><td class="method">POST</td><td><code>/api/zim/search</code></td>
-              <td><code>{"query","zims","top_k"}</code> → 命中 <code>[{zim,path,title,snippet,score}]</code>。</td></tr>
-          <tr><td class="method">GET</td><td><code>/api/zim/article?zim=&amp;path=</code></td>
-              <td>读取原文（HTML→纯文本），用于引用面板与阅读器。</td></tr>
-          <tr><td class="method">POST</td><td><code>/api/zim/suggest</code></td>
-              <td>标题补全。请求体 <code>{"prefix","zim","limit"}</code>。</td></tr>
-        </tbody>
-      </table>
-    </section>
+      <section>
+        <h2>ZIM 外置知识库</h2>
+        <table>
+          <thead><tr><th>方法</th><th>路径</th><th>说明</th></tr></thead>
+          <tbody>
+            <tr><td class="method">GET</td><td><code>/api/zim/list</code></td>
+                <td>列出 <code>CLAP_ZIM_ROOTS</code>（默认 <code>~/Documents/重点文献</code>）下的 ZIM：条目数、体积、语言、能否读取。</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/zim/search</code></td>
+                <td><code>{"query","zims","top_k"}</code> → 结果 <code>[{zim,path,title,snippet,score}]</code>。
+                    长问句会自动去掉疑问词，再按关键词分别检索后合并。</td></tr>
+            <tr><td class="method">GET</td><td><code>/api/zim/article?zim=&amp;path=</code></td>
+                <td>读取原文（把 HTML 转成纯文本），用于引用面板和阅读器。</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/zim/suggest</code></td>
+                <td>标题补全。请求体 <code>{"prefix","zim","limit"}</code>。</td></tr>
+          </tbody>
+        </table>
+      </section>
 
-    <section>
-      <h2>标注</h2>
-      <table>
-        <thead><tr><th>方法</th><th>路径</th><th>说明</th></tr></thead>
-        <tbody>
-          <tr><td class="method">POST</td><td><code>/api/annotate</code></td>
-              <td>请求体 <code>{"target","kind","tags","note","author"}</code>；
-                  kind 取 <code>keypoint / question / generated / reviewed / error_fix / knowledge_point</code>。</td></tr>
-          <tr><td class="method">POST</td><td><code>/api/annotate/export</code></td>
-              <td>导出 CSV/JSON。请求体 <code>{"path","format"}</code>。</td></tr>
-        </tbody>
-      </table>
-    </section>
+      <section>
+        <h2>模型设置</h2>
+        <table>
+          <thead><tr><th>方法</th><th>路径</th><th>说明</th></tr></thead>
+          <tbody>
+            <tr><td class="method">GET</td><td><code>/api/settings</code></td>
+                <td>服务商配置与默认模型；密钥永远只返回掩码。</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/settings/provider</code></td>
+                <td>手动配置服务商：<code>{"id","base","key","models"}</code>。
+                    <code>key</code> 留空表示不修改；<code>models</code> 可写逗号分隔的模型 ID（留空则从端点自动获取）。</td></tr>
+            <tr><td class="method">DELETE</td><td><code>/api/settings/provider/{id}</code></td>
+                <td>删除该服务商的本地配置。</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/settings/default</code></td>
+                <td>设置默认模型：<code>{"provider","model"}</code>。</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/settings/import</code></td>
+                <td>导入 JSON 配置（opencode / pi / CLAP 风格）：<code>{"json": "…"}</code>。
+                    导入后密钥只写入本机配置文件（权限 0600），响应与界面只显示掩码。</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/settings/test</code></td>
+                <td>测试连接：<code>{"id"}</code> → 是否可用 + 模型清单。</td></tr>
+          </tbody>
+        </table>
+      </section>
 
-    <section>
-      <h2>知识库</h2>
-      <table>
-        <thead><tr><th>方法</th><th>路径</th><th>说明</th></tr></thead>
-        <tbody>
-          <tr><td class="method">POST</td><td><code>/api/kb/index</code></td><td>multipart 上传文件并入库。</td></tr>
-          <tr><td class="method">POST</td><td><code>/api/kb/search</code></td><td><code>{"query","k"}</code> 检索。</td></tr>
-          <tr><td class="method">GET</td><td><code>/api/kb/stats</code></td><td>库状态（分块数、目录）。</td></tr>
-          <tr><td class="method">POST</td><td><code>/api/kb/clear</code></td><td>清空知识库。</td></tr>
-        </tbody>
-      </table>
-    </section>
+      <section>
+        <h2>标注与本地知识库</h2>
+        <table>
+          <thead><tr><th>方法</th><th>路径</th><th>说明</th></tr></thead>
+          <tbody>
+            <tr><td class="method">POST</td><td><code>/api/annotate</code></td>
+                <td>请求体 <code>{"target","kind","tags","note","author"}</code>；
+                    kind 取 <code>keypoint / question / generated / reviewed / error_fix / knowledge_point</code>。</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/annotate/export</code></td>
+                <td>导出 CSV/JSON。请求体 <code>{"path","format"}</code>。</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/kb/index</code></td><td>上传文件并入库（multipart）。</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/kb/search</code></td><td><code>{"query","k"}</code> 检索本地知识库。</td></tr>
+            <tr><td class="method">GET</td><td><code>/api/kb/stats</code></td><td>本地知识库状态（分块数、目录）。</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/kb/clear</code></td><td>清空本地知识库。</td></tr>
+          </tbody>
+        </table>
+      </section>
 
-    <section>
-      <h2>页面</h2>
-      <table>
-        <thead><tr><th>方法</th><th>路径</th><th>说明</th></tr></thead>
-        <tbody>
-          <tr><td class="method">GET</td><td><code>/</code></td><td>对话页（默认落地页）：有依据模式、分支、标注、导出/分享/续期。</td></tr>
-          <tr><td class="method">GET</td><td><code>/kb</code></td><td>知识库页：ZIM 库列表、检索、原文阅读、分享包导入。</td></tr>
-          <tr><td class="method">GET</td><td><code>/timeline?file=…</code></td><td>时间轴视图，渲染指定 <code>.clap</code> 会话。</td></tr>
-          <tr><td class="method">GET</td><td><code>/api-docs</code></td><td>本页。</td></tr>
-        </tbody>
-      </table>
-    </section>
+      <section>
+        <h2>页面</h2>
+        <table>
+          <thead><tr><th>方法</th><th>路径</th><th>说明</th></tr></thead>
+          <tbody>
+            <tr><td class="method">GET</td><td><code>/</code></td><td>对话页：有依据模式、分支、标注、导出、分享、续期。</td></tr>
+            <tr><td class="method">GET</td><td><code>/kb</code></td><td>知识库页：ZIM 列表、检索、原文阅读、分享包导入。</td></tr>
+            <tr><td class="method">GET</td><td><code>/timeline?file=…</code></td><td>时间轴视图，渲染指定的 <code>.clap</code> 会话。</td></tr>
+            <tr><td class="method">GET</td><td><code>/api-docs</code></td><td>本页。</td></tr>
+          </tbody>
+        </table>
+      </section>
+    </div>
+
+    <!-- ======================= English ======================= -->
+    <div data-lang-block="en">
+      <h1>CLAP Web API</h1>
+      <p class="lead">Every model call goes through the provider layer, which speaks the
+        OpenAI-compatible HTTP API. Credentials are read into memory only from
+        environment variables (<code>*_API_KEY</code> / <code>*_TOKEN</code> / <code>*_KEY</code>),
+        <code>~/.config/opencode/opencode.json</code> and <code>~/.pi/agent/auth.json</code>;
+        the API only ever returns masked values.</p>
+
+      <section>
+        <h2>Chat and models</h2>
+        <table>
+          <thead><tr><th>Method</th><th>Path</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td class="method">GET</td><td><code>/api/models</code></td>
+                <td>Models grouped by provider, with the environment assembly result (<code>env_assembly</code>), masked credentials, availability and the default selection.</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/chat</code></td>
+                <td>Streaming chat (SSE). Body <code>{"message","provider","model","branch","lane","grounded","zims","top_k","renew_summary","mode","message_id","lang"}</code>.
+                    <code>mode</code>: <code>send</code> (new question), <code>regenerate</code> (answer the user message
+                    <code>message_id</code> again; the previous answer is replaced), <code>edit</code> (replace that
+                    question with <code>message</code> and answer again).
+                    Events: <code>start</code> → (grounded mode) <code>sources</code> → <code>delta</code>… → <code>done</code>
+                    (latency, tokens, sources, the per-sentence check <code>audit</code>, and any error).
+                    In grounded mode the ZIM libraries are searched first; if nothing is found the reply is “the material does not mention it” and no model call is made.
+                    The interface ships ten languages (Chinese, English, Japanese, French, Russian, German, Spanish, Portuguese, Italian, Korean) and three theme modes (light, dark, system).</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/chat/stop</code></td>
+                <td>Pause generation. Body <code>{"stream_id"}</code>; omit it to pause every running stream. Text already produced is kept and stored as <code>error:"cancelled"</code>.</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>Sessions</h2>
+        <table>
+          <thead><tr><th>Method</th><th>Path</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td class="method">GET</td><td><code>/api/session/get?branch=</code></td>
+                <td>Current session: messages of the chosen branch (including the shared main line), branches, annotations and renewals.</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/session/new</code></td><td>Start an empty session.</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/session/save</code></td><td>Save as a v2 <code>.clap</code> file. Body <code>{"path"}</code>.</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/session/load</code></td><td>Load a <code>.clap</code> file (v1 files are migrated losslessly). Body <code>{"path"}</code>.</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/session/fork</code></td><td>Fork a branch at a message. Body <code>{"at","name","model","note"}</code>.</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/session/export</code></td>
+                <td>Export the current branch. Body <code>{"format":"md|html|json","branch","path"}</code>; returns <code>content</code> and the written <code>path</code>. The HTML export is a single file with no external resources.</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/session/share</code></td><td>Pack into a <code>.clapshare</code> file (no credentials, no local paths).</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/session/adopt</code></td><td>Import a share package. Body <code>{"package","policy":"rename|overwrite|fork"}</code>.</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/session/renew</code></td>
+                <td>Session renewal: builds a summary without calling a model (turns, key content, annotations). The returned <code>summary</code> is carried as a system message with the next question.</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>External ZIM library</h2>
+        <table>
+          <thead><tr><th>Method</th><th>Path</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td class="method">GET</td><td><code>/api/zim/list</code></td>
+                <td>Lists the ZIM files under <code>CLAP_ZIM_ROOTS</code> (default <code>~/Documents/重点文献</code>): entries, size, language, readability.</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/zim/search</code></td>
+                <td><code>{"query","zims","top_k"}</code> → <code>[{zim,path,title,snippet,score}]</code>. Long questions are stripped of question words and searched term by term, then merged.</td></tr>
+            <tr><td class="method">GET</td><td><code>/api/zim/article?zim=&amp;path=</code></td>
+                <td>Read the original article (HTML converted to plain text) for the citation panel and reader.</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/zim/suggest</code></td>
+                <td>Title suggestions. Body <code>{"prefix","zim","limit"}</code>.</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>Model settings</h2>
+        <table>
+          <thead><tr><th>Method</th><th>Path</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td class="method">GET</td><td><code>/api/settings</code></td>
+                <td>Provider configuration and the default model; keys are only ever returned masked.</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/settings/provider</code></td>
+                <td>Configure a provider manually: <code>{"id","base","key","models"}</code>.
+                    An empty <code>key</code> keeps the stored one; <code>models</code> accepts comma-separated IDs (empty = fetch from the endpoint).</td></tr>
+            <tr><td class="method">DELETE</td><td><code>/api/settings/provider/{id}</code></td>
+                <td>Remove that provider's local configuration.</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/settings/default</code></td>
+                <td>Set the default model: <code>{"provider","model"}</code>.</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/settings/import</code></td>
+                <td>Import a JSON document (opencode / pi / CLAP style): <code>{"json": "…"}</code>.
+                    Keys are written only to the local settings file (mode 0600); responses and the UI show a mask.</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/settings/test</code></td>
+                <td>Test a provider: <code>{"id"}</code> → availability and model list.</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>Annotations and the local knowledge base</h2>
+        <table>
+          <thead><tr><th>Method</th><th>Path</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td class="method">POST</td><td><code>/api/annotate</code></td>
+                <td>Body <code>{"target","kind","tags","note","author"}</code>; kind is one of <code>keypoint / question / generated / reviewed / error_fix / knowledge_point</code>.</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/annotate/export</code></td><td>Export CSV/JSON. Body <code>{"path","format"}</code>.</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/kb/index</code></td><td>Upload and index a document (multipart).</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/kb/search</code></td><td>Search the local knowledge base. Body <code>{"query","k"}</code>.</td></tr>
+            <tr><td class="method">GET</td><td><code>/api/kb/stats</code></td><td>Local knowledge base status (chunks, directory).</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/kb/clear</code></td><td>Clear the local knowledge base.</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>Pages</h2>
+        <table>
+          <thead><tr><th>Method</th><th>Path</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td class="method">GET</td><td><code>/</code></td><td>Chat workspace: grounded mode, branches, annotations, export, share, renew.</td></tr>
+            <tr><td class="method">GET</td><td><code>/kb</code></td><td>Knowledge page: ZIM list, search, original reading, share package import.</td></tr>
+            <tr><td class="method">GET</td><td><code>/timeline?file=…</code></td><td>Timeline view rendered for a <code>.clap</code> session.</td></tr>
+            <tr><td class="method">GET</td><td><code>/api-docs</code></td><td>This page.</td></tr>
+          </tbody>
+        </table>
+      </section>
+    </div>
   </main>
 
   <footer class="footer">
-    <span>默认地址 127.0.0.1:5057（5000 端口在 macOS 上被 AirPlay 占用）。</span>
+    <span data-i18n="kb.footer1">密钥只在内存中读取，界面与接口只显示掩码。</span>
   </footer>
 </div>
+
+<script>{% include "i18n.js" %}</script>
+<script>
+(function () {
+  const langSel = document.getElementById("lang");
+  langSel.value = CLAPi18n.lang;
+  const themeSel = document.getElementById("theme");
+  themeSel.value = CLAPtheme.mode;
+  themeSel.addEventListener("change", () => CLAPtheme.setMode(themeSel.value));
+  langSel.addEventListener("change", () => CLAPi18n.setLang(langSel.value));
+  CLAPi18n.onChange(() => { langSel.value = CLAPi18n.lang; });
+  CLAPi18n.apply();
+})();
+</script>
 </body>
 </html>

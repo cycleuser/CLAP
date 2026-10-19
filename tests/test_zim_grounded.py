@@ -86,11 +86,12 @@ def test_build_context_numbers_sources():
     assert "[1]" in block and "[2]" in block and "物理资料MD.zim" in block
 
 
-def test_render_system_prompt_is_closed_world():
+def test_render_system_prompt_restricts_to_material():
     sources, _ = GR.build_context([Hit()])
     prompt = GR.render_system_prompt(sources)
-    assert "只能使用下方编号材料" in prompt
+    assert "只使用下方编号材料回答" in prompt
     assert "来源未提及" in prompt
+    assert "用与用户提问相同的语言回答" in prompt
     assert "[1] 讲稿" in prompt
 
 
@@ -261,3 +262,61 @@ def test_message_extras_persist_and_validate(tmp_path):
     back = SM.load_session(f)
     assert back["messages"][1]["sources"][0]["zim"] == "物理资料MD.zim"
     assert back["messages"][1]["audit"]["score"] == 1.0
+
+
+# ---------------------------------------------------------------- markdown
+
+
+def test_markdown_headings_lists_and_tables():
+    from clap.core import markdown_render as MD
+
+    html = MD.render_markdown("# 标题\n\n- 一\n- 二\n\n| a | b |\n|---|---|\n| 1 | 2 |")
+    assert "<h1>" in html and "<li>" in html and "<table>" in html and "<th>" in html
+
+
+def test_markdown_inline_and_display_math_becomes_mathml():
+    from clap.core import markdown_render as MD
+
+    html = MD.render_markdown("质能关系 $E=mc^2$，以及\n\n$$\\frac{a}{b}$$\n")
+    assert 'class="math math-inline"' in html
+    assert 'class="math math-block"' in html
+    assert "<math" in html
+
+
+def test_markdown_code_block_is_highlighted_and_escaped():
+    from clap.core import markdown_render as MD
+
+    html = MD.render_markdown("```python\ndef f(x):\n    return x < 3\n```")
+    assert 'class="code-block"' in html and "python" in html
+    assert "&lt;" in html and "return" in html  # escaped, never executed
+    assert "<script>" not in html
+
+
+def test_markdown_raw_html_is_escaped():
+    from clap.core import markdown_render as MD
+
+    html = MD.render_markdown("<script>alert(1)</script>")
+    assert "<script>" not in html and "&lt;script&gt;" in html
+
+
+def test_markdown_citation_chip_carries_sentence():
+    from clap.core import markdown_render as MD
+
+    html = MD.render_markdown("量子力学研究波函数[1]。另一个事实[2,3]。")
+    assert 'class="cite"' in html and 'data-n="1"' in html
+    assert "量子力学研究波函数" in html  # sentence kept for locating the passage
+    assert 'data-n="2,3"' in html
+
+
+def test_markdown_dangerous_links_are_neutralised():
+    from clap.core import markdown_render as MD
+
+    html = MD.render_markdown("[点我](javascript:alert(1))")
+    assert "javascript:" not in html.lower()
+
+
+def test_locate_passage_finds_the_matching_paragraph():
+    text = "前言\n\n第一章：量子力学研究波函数与概率密度。\n\n第二章：无关内容。\n\n"
+    match = zim_kb.locate_passage(text, "量子力学研究波函数")
+    assert match is not None
+    assert "量子力学" in text[match["start"]:match["end"]]

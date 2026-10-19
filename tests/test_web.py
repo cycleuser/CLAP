@@ -49,7 +49,7 @@ class FakeOpenAIHandler(BaseHTTPRequestHandler):
         self.end_headers()
         # A grounded request carries the narrow prompt; echo a cited sentence
         # so the audit path is exercised for real.
-        grounded = "只能使用下方编号材料" in payload.decode("utf-8", "ignore")
+        grounded = "编号材料" in payload.decode("utf-8", "ignore")
         text = "量子力学研究波函数[1]。" if grounded else "答"
         packets = [
             {"choices": [{"delta": {"content": text}}]},
@@ -122,6 +122,8 @@ def client(fake_base, tmp_path, monkeypatch):
     fake = OpenAICompatProvider("fake-web", fake_base, api_key="sk-fake-web-0000", name="fake")
     monkeypatch.setattr(webapp, "get_registry", lambda: {"fake-web": fake})
     monkeypatch.setattr(webapp, "DEFAULT_PROVIDER", "fake-web")
+    # never touch the user's real settings file
+    monkeypatch.setenv("CLAP_SETTINGS_PATH", str(tmp_path / "settings.json"))
     from clap.core.knowledge_base import KnowledgeBase
 
     monkeypatch.setattr(webapp, "kb", KnowledgeBase(persist_directory=str(tmp_path / "kb")))
@@ -156,8 +158,40 @@ def test_pages_render_200_with_design_tokens(client, path):
     assert r.status_code == 200
     html = r.get_data(as_text=True)
     assert "<style>" in html and "--blue-600" in html  # design tokens inlined
-    assert "prefers-color-scheme: dark" in html  # dark mode supported
+    assert 'html[data-theme="dark"]' in html  # dark palette shipped
+    assert "CLAPtheme" in html and 'data-theme' in html  # theme switcher wired
     assert "有依据" in html or "ZIM" in html
+
+
+@pytest.mark.parametrize("path", ["/", "/kb", "/api-docs", "/timeline"])
+def test_pages_offer_language_and_theme_switches(client, path):
+    """Ten interface languages and three theme modes on every page."""
+    html = client.get(path).get_data(as_text=True)
+    assert 'id="lang"' in html and 'id="theme"' in html
+    assert "CLAPi18n" in html and "CLAPtheme" in html
+    for tag in ("zh", "en", "ja", "fr", "ru", "de", "es", "pt", "it", "ko"):
+        assert 'value="%s"' % tag in html, (path, tag)
+    for mode in ("auto", "light", "dark"):
+        assert 'value="%s"' % mode in html, (path, mode)
+
+
+def test_i18n_dictionaries_cover_all_ten_languages():
+    """Every language block carries the complete key set (199 entries)."""
+    import pathlib
+    import re
+
+    js = (pathlib.Path(webapp.__file__).parent / "static" / "i18n.js").read_text(encoding="utf-8")
+    marks = list(re.finditer(r"^    (\w+): \{\n", js, re.M))
+    blocks: dict[str, str] = {}
+    for i, m in enumerate(marks):
+        end = marks[i + 1].start() if i + 1 < len(marks) else js.find("\n  };", m.end())
+        blocks[m.group(1)] = js[m.end():end]
+    assert set(blocks) >= {"zh", "en", "ja", "fr", "ru", "de", "es", "pt", "it", "ko"}
+    base = set(re.findall(r'"([A-Za-z0-9_.]+)"\s*:', blocks["zh"]))
+    assert len(base) >= 190
+    for lang, body in blocks.items():
+        keys = set(re.findall(r'"([A-Za-z0-9_.]+)"\s*:', body))
+        assert keys == base, (lang, sorted(base - keys)[:5], sorted(keys - base)[:5])
 
 
 def test_pages_have_no_external_resources(client):
@@ -166,6 +200,16 @@ def test_pages_have_no_external_resources(client):
         html = client.get(path).get_data(as_text=True)
         for bad in ("http://", "https://", "//cdn", "<link rel=\"stylesheet\"", "src=\"/static"):
             assert bad not in html, (path, bad)
+
+
+@pytest.mark.parametrize("path", ["/", "/kb", "/api-docs", "/timeline"])
+def test_pages_offer_language_switch(client, path):
+    """The whole interface is bilingual: a switcher + both dictionaries inline."""
+    html = client.get(path).get_data(as_text=True)
+    assert 'id="lang"' in html
+    assert "CLAPi18n" in html
+    assert "English" in html and "中文" in html
+    assert 'data-i18n="nav.chat"' in html
 
 
 def test_timeline_page_without_param_is_friendly(client):
@@ -240,7 +284,9 @@ def test_chat_tools_lane_does_not_touch_main_line(client):
 def test_chat_rejects_empty_and_unknown_provider(client):
     assert client.post("/api/chat", json={"message": " "}).status_code == 400
     r = client.post("/api/chat", json={"message": "x", "provider": "nope"})
-    assert r.status_code == 400 and "未配置" in r.get_json()["error"]
+    assert r.status_code == 400 and "还没有配置" in r.get_json()["error"]
+    r2 = client.post("/api/chat", json={"message": "x", "provider": "nope", "lang": "en"})
+    assert r2.status_code == 400 and "not configured" in r2.get_json()["error"]
 
 
 def test_chat_error_is_friendly_and_scrubbed(client, monkeypatch):
@@ -283,6 +329,14 @@ def test_grounded_chat_abstains_when_no_material(client):
     assert "来源未提及" in text
     meta = [e for e in events if e.get("done")][0]["meta"]
     assert meta["audit"]["score"] == 1.0  # honest abstention
+
+
+def test_grounded_abstention_follows_ui_language(client):
+    events = _chat(client, {"message": "无材料的问题", "grounded": True, "lang": "en"})
+    text = "".join(e["delta"] for e in events if "delta" in e)
+    assert "does not mention" in text
+    meta = [e for e in events if e.get("done")][0]["meta"]
+    assert meta["audit"]["score"] == 1.0
 
 
 # ---------------------------------------------------------------- lifecycle
@@ -473,3 +527,144 @@ def test_local_ollama_needs_explicit_opt_in(monkeypatch):
     reg = PR.discover_providers()
     assert "ollama-local" not in reg
     assert all(not isinstance(p, PR.OllamaProvider) for p in reg.values())
+
+
+# ---------------------------------------------------------------- redo
+
+
+def test_regenerate_replaces_the_previous_answer(client):
+    _chat(client, {"message": "第一问"})
+    msgs = client.get("/api/session/get").get_json()["messages"]
+    user, old_answer = msgs[0], msgs[1]
+    events = _chat(client, {"mode": "regenerate", "message_id": user["id"], "model": "fake-chat-model"})
+    assert any(e.get("done") for e in events)
+    after = client.get("/api/session/get").get_json()
+    assert [m["role"] for m in after["messages"]] == ["user", "assistant"]
+    assert after["messages"][0]["content"] == "第一问"
+    assert after["messages"][1]["content"] == "答案"
+    assert any(h.get("event") == "regenerate" for h in after["history"])
+
+
+def test_edit_question_rewrites_text_and_drops_old_answer(client):
+    _chat(client, {"message": "原来的问题"})
+    user = client.get("/api/session/get").get_json()["messages"][0]
+    _chat(client, {"mode": "edit", "message_id": user["id"], "message": "改后的问题", "model": "fake-chat-model"})
+    after = client.get("/api/session/get").get_json()
+    assert [m["role"] for m in after["messages"]] == ["user", "assistant"]
+    assert after["messages"][0]["content"] == "改后的问题"
+    assert after["messages"][0]["edited_from"] == "原来的问题"
+    assert any(h.get("event") == "edit" for h in after["history"])
+
+
+def test_regenerate_rejects_assistant_message_id(client):
+    _chat(client, {"message": "问题"})
+    answer = client.get("/api/session/get").get_json()["messages"][1]
+    r = client.post("/api/chat", json={"mode": "regenerate", "message_id": answer["id"], "model": "fake-chat-model"})
+    assert r.status_code == 400
+
+
+def test_grounded_abstention_translates_to_japanese(client):
+    events = _chat(client, {"message": "无材料的问题", "grounded": True, "lang": "ja"})
+    text = "".join(e["delta"] for e in events if "delta" in e)
+    assert "資料には言及されていません" in text
+    meta = [e for e in events if e.get("done")][0]["meta"]
+    assert meta["audit"]["score"] == 1.0
+
+
+# ---------------------------------------------------------------- settings
+
+
+def test_settings_endpoint_lists_providers_with_masked_keys(client):
+    j = client.get("/api/settings").get_json()
+    assert j["success"] is True
+    fake = [p for p in j["providers"] if p["id"] == "fake-web"][0]
+    assert fake["configured"] is True
+    assert "sk-fake-web-0000" not in json.dumps(j)
+    assert fake["masked"].startswith("***len")
+    assert j["default"]["provider"] == "fake-web"  # registry fallback in tests
+
+
+def test_settings_save_provider_masks_and_persists(client, tmp_path):
+    j = client.post(
+        "/api/settings/provider",
+        json={"id": "deepseek", "base": "https://api.deepseek.com/v1", "key": "sk-test-abcdef123456"},
+    ).get_json()
+    assert j["success"] is True
+    assert "sk-test-abcdef123456" not in json.dumps(j)
+    assert j["provider"]["masked"].startswith("***len")
+
+    raw = (tmp_path / "settings.json").read_text(encoding="utf-8")
+    assert "sk-test-abcdef123456" in raw  # stored locally, not in API responses
+    mode = oct((tmp_path / "settings.json").stat().st_mode & 0o777)
+    assert mode == "0o600"
+
+    listed = client.get("/api/settings").get_json()
+    row = [p for p in listed["providers"] if p["id"] == "deepseek"][0]
+    assert row["source"] == "settings" and row["base"].endswith("/v1")
+    assert "sk-test-abcdef123456" not in json.dumps(listed)
+
+
+def test_settings_default_and_remove(client, tmp_path):
+    client.post("/api/settings/provider", json={"id": "deepseek", "base": "https://api.deepseek.com/v1", "key": "sk-xxxxxxxxxxxx"})
+    j = client.post("/api/settings/default", json={"provider": "deepseek", "model": "deepseek-flash"}).get_json()
+    assert j["success"] is True and j["default"]["model"] == "deepseek-flash"
+    assert client.delete("/api/settings/provider/deepseek").get_json()["success"] is True
+    assert json.loads((tmp_path / "settings.json").read_text(encoding="utf-8"))["providers"] == {}
+
+
+def test_default_selection_prefers_deepseek_flash(monkeypatch, tmp_path):
+    monkeypatch.setenv("CLAP_SETTINGS_PATH", str(tmp_path / "s.json"))
+
+    class FakeDeepSeek:
+        base = "https://api.deepseek.com/v1"
+
+        def list_models(self):
+            return ["deepseek-v4-pro", "deepseek-flash"]
+
+    assert webapp.default_selection({"deepseek": FakeDeepSeek()}) == {
+        "provider": "deepseek",
+        "model": "deepseek-flash",
+    }
+
+
+def test_settings_import_opencode_json_masks_and_keeps_models(client, tmp_path):
+    doc = {
+        "provider": {
+            "deepseek": {
+                "options": {"baseURL": "https://api.deepseek.com/v1", "apiKey": "sk-import-1234567890"},
+                "models": {"deepseek-flash": {}, "deepseek-v4-pro": {}},
+            },
+            "nvidia": {"options": {"baseURL": "https://integrate.api.nvidia.com/v1", "apiKey": "nvapi-abcdefghij"}},
+        }
+    }
+    j = client.post("/api/settings/import", json={"json": json.dumps(doc)}).get_json()
+    assert j["success"] is True and j["count"] == 2
+    assert "sk-import" not in json.dumps(j) and "nvapi-" not in json.dumps(j)
+
+    saved = json.loads((tmp_path / "settings.json").read_text(encoding="utf-8"))
+    assert saved["providers"]["deepseek"]["models"] == ["deepseek-flash", "deepseek-v4-pro"]
+    assert saved["providers"]["deepseek"]["apiKey"] == "sk-import-1234567890"  # local file only
+
+    listed = client.get("/api/settings").get_json()
+    assert "sk-import" not in json.dumps(listed) and "nvapi-" not in json.dumps(listed)
+    row = [p for p in listed["providers"] if p["id"] == "deepseek"][0]
+    assert row["source"] == "settings"
+    assert "deepseek-flash" in row["models"]
+
+
+def test_manual_models_are_used_when_endpoint_lists_nothing(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAP_SETTINGS_PATH", str(tmp_path / "s.json"))
+    from clap.core import providers as PR
+    from clap.core import settings_store as SS
+
+    SS.set_provider(
+        "manual", "http://127.0.0.1:9/v1", "sk-manual-12345678", models=["manual-a", "manual-b"]
+    )
+    reg = PR.discover_providers()
+    assert reg["manual"].list_models() == ["manual-a", "manual-b"]
+
+
+def test_settings_import_rejects_broken_json(client):
+    r = client.post("/api/settings/import", json={"json": "{not json"})
+    assert r.status_code == 400
+    assert r.get_json()["success"] is False

@@ -23,19 +23,42 @@ import re
 from dataclasses import dataclass, field
 
 CITATION_RE = re.compile(r"\[(\d+(?:\s*[,，]\s*\d+)*)\]")
+MATH_RE = re.compile(r"\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|\$[^$\n]*\$|\\\(.*?\\\)")
 SPLIT_RE = re.compile(r"(?<=[。！？!?；;])\s*|\n+")
 LATIN_SPLIT_RE = re.compile(r"(?<=[.])\s+")
 PUNCT_RE = re.compile(r"[\s\u3000，。！？、；：,.!?;:\"'“”‘’（）()\[\]【】《》<>—\-…·]+")
 
 EMPTY_ANSWER = "来源未提及。"
 
-SYSTEM_PROMPT = """你是 CLAP 的「有依据」答题助手。严格遵循：
+# Phrases that count as an honest "the material does not say" answer. Both
+# languages are accepted because the answer language follows the question.
+ABSTENTION_PREFIXES = (
+    "来源未提及",
+    "（来源未提及",
+    "(来源未提及",
+    "the material does not mention",
+    "the material doesn't mention",
+    "not mentioned in the material",
+    "no source material",
+    # the same honest answer in the other interface languages
+    "資料には言及されていません",
+    "le document n'en parle pas",
+    "в материале это не упоминается",
+    "das material erwähnt das nicht",
+    "el material no lo menciona",
+    "o material não menciona isto",
+    "il materiale non lo menziona",
+    "자료에 언급되지 않았습니다",
+)
 
-1. 只能使用下方编号材料作答；材料之外的知识一律不得使用。
-2. 每个事实性句子末尾必须标注来源编号，如 [1] 或 [2,3]。
-3. 材料不足以回答时，直接输出「来源未提及。」并说明缺什么，不要猜测、不要补充常识。
-4. 不得编造材料中没有的数字、人名、论文标题或结论。
-5. 引用原文时保持原意，可压缩但不可改写事实。
+SYSTEM_PROMPT = """你是 CLAP 的「有依据」答题助手。请严格遵守下面的规则：
+
+1. 只使用下方编号材料回答，不要使用材料以外的知识。
+2. 每个陈述事实的句子末尾都要标注来源编号，例如 [1] 或 [2,3]。
+3. 材料没有提到答案时，直接写「来源未提及。」并说明缺少什么，不要猜测，也不要补充常识。
+4. 不要编造材料里没有的数字、人名、论文标题或结论。
+5. 引用原文时保持原意，可以压缩，但不要改变事实。
+6. 用与用户提问相同的语言回答。
 
 材料：
 {context}
@@ -75,6 +98,7 @@ class SentenceAudit:
     verified: bool = True
     overlap: float = 0.0
     reason: str = ""
+    code: str = ""
 
     def as_dict(self) -> dict:
         return {
@@ -84,6 +108,7 @@ class SentenceAudit:
             "verified": self.verified,
             "overlap": round(self.overlap, 3),
             "reason": self.reason,
+            "code": self.code,
         }
 
 
@@ -124,6 +149,9 @@ def split_sentences(answer: str) -> list[str]:
     text = (answer or "").strip()
     if not text:
         return []
+    # Formulas are not prose: drop TeX before splitting, otherwise each line
+    # of a display block becomes a "sentence" that fails the lexical check.
+    text = MATH_RE.sub(" ", text)
     parts: list[str] = []
     for chunk in SPLIT_RE.split(text):
         chunk = (chunk or "").strip()
@@ -139,14 +167,23 @@ def split_sentences(answer: str) -> list[str]:
     merged: list[str] = []
     buf = ""
     for part in parts:
-        buf = (buf + part) if buf else part
-        if re.search(r"[：:；;]\s*$", buf) and len(buf) < 120:
+        buf = (buf + " " + part) if buf else part
+        if re.search(r"[：:；;]\s*$", buf) and len(buf) < 160:
             continue
-        merged.append(buf)
+        merged.append(buf.strip())
         buf = ""
     if buf:
-        merged.append(buf)
-    return merged
+        merged.append(buf.strip())
+    # A citation that sits on its own line («[1]。») belongs to the sentence
+    # above it, not to a new empty sentence.
+    out: list[str] = []
+    for piece in merged:
+        bare = strip_citations(piece).strip(" \t，,。.；;：:")
+        if not bare and out:
+            out[-1] = (out[-1] + " " + piece).strip()
+            continue
+        out.append(piece)
+    return out
 
 
 def citations_of(sentence: str) -> list[int]:
@@ -163,6 +200,11 @@ def citations_of(sentence: str) -> list[int]:
 
 def strip_citations(sentence: str) -> str:
     return CITATION_RE.sub("", sentence)
+
+
+def strip_math(sentence: str) -> str:
+    """Remove TeX before lexical comparison (formulas have no Chinese prose)."""
+    return MATH_RE.sub(" ", sentence or "")
 
 
 def _grams(text: str) -> set[str]:
@@ -214,6 +256,7 @@ def support_score(sentence: str, source_text: str) -> float:
     cannot align, so named entities / numbers / acronyms carry the check.
     """
     body = strip_citations(sentence)
+    body = strip_math(body)
     grams = _grams(body)
     if not grams:
         return 0.0
@@ -242,24 +285,51 @@ def audit(answer: str, sources: list[Source]) -> dict:
     counted = 0
     grounded = 0
     unverified = 0
+
+    # A plain «the material does not mention it» answer is one honest
+    # abstention, not a list of uncited sentences — check it before splitting
+    # (translations may contain parentheses with full stops).
+    stripped = strip_math(strip_citations(answer or "")).strip().lower()
+    if stripped and any(stripped.startswith(p.lower()) for p in ABSTENTION_PREFIXES):
+        row = SentenceAudit(
+            text=(answer or "").strip(), grounded=True, overlap=1.0,
+            reason="来源未提及", code="abstained",
+        )
+        return {
+            "score": 1.0,
+            "sentences_total": 1,
+            "sentences_grounded": 1,
+            "sentences_unverified": 0,
+            "sentences": [row.as_dict()],
+            "threshold": GROUNDING_THRESHOLD,
+        }
+
     for sent in split_sentences(answer):
         cited = citations_of(sent)
         body = strip_citations(sent).strip()
-        if len(body) < MIN_SENTENCE_CHARS:
+        prose = strip_math(body).strip()
+        if len(prose) < MIN_SENTENCE_CHARS:
             continue
-        if body.startswith(("来源未提及", "（来源未提及", "(来源未提及")):
-            # honest abstention is correct behaviour: report, not penalise
-            rows.append(SentenceAudit(text=sent, cited=cited, grounded=True, overlap=1.0, reason="明确弃答"))
+        body_l = body.lower()
+        if any(body_l.startswith(p.lower()) for p in ABSTENTION_PREFIXES):
+            # Saying "the material does not mention it" is correct behaviour.
+            rows.append(
+                SentenceAudit(text=sent, cited=cited, grounded=True, overlap=1.0,
+                              reason="来源未提及", code="abstained")
+            )
             counted += 1
             grounded += 1
             continue
         if not cited:
-            rows.append(SentenceAudit(text=sent, cited=[], grounded=False, reason="未标注来源"))
+            rows.append(SentenceAudit(text=sent, cited=[], grounded=False, reason="未标注来源", code="uncited"))
             counted += 1
             continue
         valid = [n for n in cited if n in by_n]
         if not valid:
-            rows.append(SentenceAudit(text=sent, cited=cited, grounded=False, reason="引用了不存在的编号"))
+            rows.append(
+                SentenceAudit(text=sent, cited=cited, grounded=False,
+                              reason="引用了不存在的编号", code="bad_number")
+            )
             counted += 1
             continue
         best = 0.0
@@ -271,20 +341,28 @@ def audit(answer: str, sources: list[Source]) -> dict:
                 best = score
         if best >= GROUNDING_THRESHOLD:
             rows.append(
-                SentenceAudit(text=sent, cited=cited, grounded=True, overlap=best,
-                              reason="有据（跨语言·术语核对）" if cross else "有据")
+                SentenceAudit(
+                    text=sent, cited=cited, grounded=True, overlap=best,
+                    reason="有据（跨语言，按术语核对）" if cross else "有据",
+                    code="grounded_cross" if cross else "grounded",
+                )
             )
             counted += 1
             grounded += 1
         elif cross and not latin_tokens(body):
             rows.append(
-                SentenceAudit(text=sent, cited=cited, grounded=False, verified=False,
-                              overlap=best, reason="跨语言转述，词面无法核验")
+                SentenceAudit(
+                    text=sent, cited=cited, grounded=False, verified=False,
+                    overlap=best, reason="跨语言转述，无法逐字核对", code="unverified_cross",
+                )
             )
             unverified += 1
         else:
             rows.append(
-                SentenceAudit(text=sent, cited=cited, grounded=False, overlap=best, reason="引用材料不支持该句")
+                SentenceAudit(
+                    text=sent, cited=cited, grounded=False, overlap=best,
+                    reason="引用材料不支持该句", code="unsupported",
+                )
             )
             counted += 1
     score = (grounded / counted) if counted else 0.0

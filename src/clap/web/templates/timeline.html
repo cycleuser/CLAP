@@ -4,44 +4,78 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="color-scheme" content="light dark">
-<title>CLAP · 时间轴 · {{ title }}</title>
+<title>CLAP · Timeline · {{ title }}</title>
+<script>{% include "theme.js" %}</script>
 <style>{% include "app.css" %}</style>
 </head>
 <body>
 <div class="app">
   <header class="topbar">
-    <div class="brand"><strong>CLAP 时间轴</strong><span>core/timeline.py 渲染</span></div>
+    <div class="brand"><strong>CLAP</strong><span data-i18n="timeline.subtitle">时间轴查看器</span></div>
+    <select id="lang" class="model-select" style="min-width:96px;max-width:120px" title="Language">
+      <option value="zh">中文</option>
+      <option value="en">English</option>
+      <option value="ja">日本語</option>
+      <option value="fr">Français</option>
+      <option value="ru">Русский</option>
+      <option value="de">Deutsch</option>
+      <option value="es">Español</option>
+      <option value="pt">Português</option>
+      <option value="it">Italiano</option>
+      <option value="ko">한국어</option>
+    </select>
+    <select id="theme" class="model-select" style="min-width:110px;max-width:150px" data-i18n-aria="theme.label" title="Theme">
+      <option value="auto" data-i18n="theme.auto">跟随系统</option>
+      <option value="light" data-i18n="theme.light">浅色</option>
+      <option value="dark" data-i18n="theme.dark">深色</option>
+    </select>
     <nav class="nav">
-      <a href="/">对话</a>
-      <a href="/timeline" class="on">时间轴</a>
-      <a href="/api-docs">接口文档</a>
+      <a href="/" data-i18n="nav.chat">对话</a>
+      <a href="/kb" data-i18n="nav.kb">知识库</a>
+      <a href="/timeline" class="on" data-i18n="nav.timeline">时间轴</a>
+      <a href="/api-docs" data-i18n="nav.api">接口</a>
     </nav>
   </header>
 
   <main class="timeline-wrap">
     <div class="panel card" style="margin:14px 20px 0">
-      <h2>会话文件 <span class="hint">渲染来源</span></h2>
+      <h2><span data-i18n="timeline.fileHeading">会话文件</span> <span class="hint" data-i18n="timeline.fileHint">渲染来源</span></h2>
       <form method="get" action="/timeline" class="composer-row">
         <input id="file" name="file" value="{{ file_param or '' }}"
-               placeholder="/绝对路径/session.clap"
-               style="flex:1;min-width:220px;font:inherit;font-size:15px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:7px 10px"
-               aria-label="会话文件路径">
-        <button class="btn small" type="submit">渲染</button>
+               placeholder="/absolute/path/session.clap"
+               data-i18n-aria="timeline.fileAria"
+               style="flex:1;min-width:220px;font:inherit;font-size:15px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:7px 10px">
+        <button class="btn small" type="submit" data-i18n="timeline.render">渲染</button>
       </form>
-      {% if error %}<p class="err-text" style="margin-top:10px">{{ error }}</p>{% endif %}
+      {% if error_key %}<p class="err-text" style="margin-top:10px" data-i18n="{{ error_key }}">缺少 file 参数</p>{% endif %}
+      {% if error %}<p class="err-text" style="margin-top:10px"><span data-i18n="timeline.renderFailed">无法渲染</span>：{{ error }}</p>{% endif %}
     </div>
 
-    {% if not error and html_body %}
+    {% if not error and not error_key and html_body %}
     <div class="frame">{{ html_body | safe }}</div>
-    {% elif not error %}
-    <p class="empty" style="margin:18px 22px">填写一个 .clap 会话文件路径，即可看到整棵会话时间轴（主线 + 支线 + 标注）。</p>
+    {% elif not error and not error_key %}
+    <p class="empty" style="margin:18px 22px" data-i18n="timeline.empty">填写一个 .clap 会话文件路径，就能看到整棵会话时间轴（主线 + 支线 + 标注）。</p>
     {% endif %}
   </main>
 
   <footer class="footer">
-    <span>时间轴与对话页共用同一套蓝灰设计语言。</span>
-    <span><a href="/api-docs">接口清单 →</a></span>
+    <span data-i18n="timeline.footer">时间轴与对话页使用同一套蓝灰配色。</span>
+    <span><a href="/api-docs" data-i18n="kb.footerLink">接口清单 →</a></span>
   </footer>
 </div>
+
+<script>{% include "i18n.js" %}</script>
+<script>
+(function () {
+  const langSel = document.getElementById("lang");
+  langSel.value = CLAPi18n.lang;
+  const themeSel = document.getElementById("theme");
+  themeSel.value = CLAPtheme.mode;
+  themeSel.addEventListener("change", () => CLAPtheme.setMode(themeSel.value));
+  langSel.addEventListener("change", () => CLAPi18n.setLang(langSel.value));
+  CLAPi18n.onChange(() => { langSel.value = CLAPi18n.lang; });
+  CLAPi18n.apply();
+})();
+</script>
 </body>
 </html>

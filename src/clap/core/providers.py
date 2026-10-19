@@ -132,11 +132,13 @@ class OpenAICompatProvider(Provider):
     "online"). The api_key is held locally and NEVER logged or persisted.
     """
 
-    def __init__(self, pid: str, base_url: str, api_key: str = "", name: str = ""):
+    def __init__(self, pid: str, base_url: str, api_key: str = "", name: str = "",
+                 models: list[str] | None = None):
         self.id = pid
         self.name = name or pid
         self.base = base_url.rstrip("/")
         self._api_key = api_key or ""
+        self._fallback_models = list(models or [])
         self.last_meta: dict = {}
 
     def masked_key(self) -> str:
@@ -222,9 +224,10 @@ class OpenAICompatProvider(Provider):
             req = urllib.request.Request(f"{self.base}/models", headers=self._headers())
             with urllib.request.urlopen(req, timeout=PROBE_TIMEOUT_S) as r:
                 data = json.loads(r.read())
-            return [m.get("id", "") for m in data.get("data", [])]
+            ids = [m.get("id", "") for m in data.get("data", []) if m.get("id")]
+            return ids or list(self._fallback_models)
         except Exception:
-            return []
+            return list(self._fallback_models)
 
     def is_available(self) -> bool:
         try:
@@ -418,6 +421,20 @@ def discover_providers(probe_path: str | None = None) -> dict[str, Provider]:
     """
     providers: dict[str, Provider] = {}
     seen: set[str] = {""}
+
+    # 0) providers saved through the web settings panel (highest priority:
+    #    an explicit choice in the UI should beat env/config discovery).
+    from clap.core import settings_store
+
+    saved = settings_store.load()
+    for pid, row in saved.get("providers", {}).items():
+        base = (row.get("base") or "").strip()
+        if not base:
+            continue
+        providers[pid] = OpenAICompatProvider(
+            pid, base, row.get("apiKey", ""), row.get("name") or pid, models=row.get("models")
+        )
+        seen.add(base.rstrip("/"))
 
     env_base = os.environ.get("CLAP_ONLINE_BASE_URL", "")
     if env_base:

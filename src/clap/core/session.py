@@ -619,6 +619,40 @@ def append_branch_message(session: dict, branch_id: str, role: str, content: str
     return msg
 
 
+def delete_replies_after(session: dict, branch_id: str, msg_id: str) -> list[str]:
+    """Remove the messages that follow `msg_id` on this branch (redo support).
+
+    Used by «重新回答» (drop the old answer, ask again) and «修改问题»
+    (edit the question, drop everything after it). Refuses when another
+    branch forked at one of the doomed messages — deleting it would break
+    that branch; the caller should operate on the branch that owns it.
+
+    Returns the sorted list of deleted message ids.
+    """
+    path = branch_path(session, branch_id)
+    ids = [m.get("id") for m in path]
+    if msg_id not in ids:
+        raise SessionError(f"message {msg_id!r} is not on branch {branch_id!r}")
+    doomed = set(ids[ids.index(msg_id) + 1 :])
+    if not doomed:
+        return []
+    for b in session.get("branches", []):
+        if b.get("id") == branch_id:
+            continue
+        if b.get("fork_at") in doomed or b.get("root") in doomed:
+            raise SessionError(
+                f"分支 {b.get('id')} 从这些消息分出去，不能直接重做；请在该分支上操作"
+            )
+    session["messages"] = [m for m in session["messages"] if m.get("id") not in doomed]
+    session["annotations"] = [
+        a for a in session.get("annotations", []) if a.get("target") not in doomed
+    ]
+    b = get_branch(session, branch_id)
+    if b and b.get("root") in doomed:
+        b["root"] = None
+    return sorted(doomed)
+
+
 def _ensure_main_root(session: dict) -> str | None:
     b = main_branch(session)
     if session["messages"] and not b.get("root"):

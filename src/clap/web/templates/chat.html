@@ -4,152 +4,169 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="color-scheme" content="light dark">
-<title>CLAP · 对话工作台</title>
+<title>CLAP · Chat</title>
+<script>{% include "theme.js" %}</script>
 <style>{% include "app.css" %}</style>
 </head>
 <body>
 <div class="app">
   <header class="topbar">
-    <div class="brand"><strong>CLAP</strong><span>Chat Local And Persistent · 对话工作台</span></div>
-    <select class="model-select" id="model" aria-label="模型（按 provider 分组）" title="模型（按 provider 分组）">
-      <option>正在探测模型…</option>
+    <div class="brand"><strong>CLAP</strong><span data-i18n="app.subtitle">对话工作台</span></div>
+    <select class="model-select" id="model" data-i18n-aria="chat.modelSelect" aria-label="模型（按服务商分组）" title="模型（按服务商分组）">
+      <option data-i18n="chat.detecting">正在探测模型…</option>
     </select>
+    <select id="lang" class="model-select" style="min-width:96px;max-width:120px" data-i18n-aria="lang.label" title="语言">
+      <option value="zh">中文</option>
+      <option value="en">English</option>
+      <option value="ja">日本語</option>
+      <option value="fr">Français</option>
+      <option value="ru">Русский</option>
+      <option value="de">Deutsch</option>
+      <option value="es">Español</option>
+      <option value="pt">Português</option>
+      <option value="it">Italiano</option>
+      <option value="ko">한국어</option>
+    </select>
+    <select id="theme" class="model-select" style="min-width:110px;max-width:150px" data-i18n-aria="theme.label" title="Theme">
+      <option value="auto" data-i18n="theme.auto">跟随系统</option>
+      <option value="light" data-i18n="theme.light">浅色</option>
+      <option value="dark" data-i18n="theme.dark">深色</option>
+    </select>
+    <button class="icon-btn" id="btn-settings" type="button" data-i18n-title="settings.open" title="设置">⚙</button>
     <nav class="nav">
-      <a href="/" class="on">对话</a>
-      <a href="/kb">知识库</a>
-      <a href="#" id="tl-link">时间轴</a>
-      <a href="/api-docs">接口</a>
+      <a href="/" class="on" data-i18n="nav.chat">对话</a>
+      <a href="/kb" data-i18n="nav.kb">知识库</a>
+      <a href="#" id="tl-link" data-i18n="nav.timeline">时间轴</a>
+      <a href="/api-docs" data-i18n="nav.api">接口</a>
     </nav>
   </header>
 
   <div class="toolbar">
-    <label class="switch" title="开启后：先检索 ZIM 材料，再闭世界作答，并逐句审计依据度">
+    <label class="switch" id="grounded-label" data-i18n-title="chat.grounded.title">
       <input type="checkbox" id="grounded">
-      <span class="track"></span><span class="lbl">有依据模式</span>
+      <span class="track"></span><span class="lbl" data-i18n="chat.grounded">有依据模式</span>
     </label>
     <div class="zim-picker">
-      <button class="chip" id="zim-btn" type="button">ZIM：全部 <span id="zim-count"></span></button>
+      <button class="chip" id="zim-btn" type="button"><span data-i18n="chat.zim.prefix">资料库：</span><span id="zim-label" data-i18n="chat.zim.all">全部</span> <span id="zim-count"></span></button>
       <div class="menu" id="zim-menu"></div>
     </div>
     <span class="sep"></span>
-    <div class="group" id="branch-bar"><span class="chip on">分支加载中…</span></div>
+    <div class="group" id="branch-bar"><span class="chip on" data-i18n="branch.loading">分支加载中…</span></div>
     <span class="sep"></span>
     <div class="group">
-      <button class="btn ghost small" id="btn-export" type="button">导出</button>
-      <button class="btn ghost small" id="btn-share" type="button">分享</button>
-      <button class="btn ghost small" id="btn-renew" type="button">续期</button>
-      <button class="btn ghost small" id="btn-new" type="button">新会话</button>
+      <button class="btn ghost small" id="btn-export" type="button" data-i18n="chat.export">导出</button>
+      <button class="btn ghost small" id="btn-share" type="button" data-i18n="chat.share">分享</button>
+      <button class="btn ghost small" id="btn-renew" type="button" data-i18n="chat.renew">续期</button>
+      <button class="btn ghost small" id="btn-new" type="button" data-i18n="chat.new">新会话</button>
     </div>
     <span class="spacer"></span>
-    <span class="status" id="status">就绪</span>
+    <span class="status" id="status" data-i18n="chat.status.ready">就绪</span>
   </div>
 
   <main class="workspace">
     <div class="chat-col">
       <section class="panel flow" id="flow" aria-live="polite" aria-label="消息流">
-        <p class="empty">还没有消息。选好模型后输入问题，按 Enter 发送。</p>
+        <p class="empty" data-i18n="chat.empty">还没有消息。选好模型后输入问题，按 Enter 发送。</p>
       </section>
 
       <section class="panel composer">
-        <textarea id="input" placeholder="输入消息…（Enter 发送，Shift+Enter 换行）" aria-label="消息输入"></textarea>
+        <textarea id="input" data-i18n-placeholder="chat.input.placeholder" placeholder="输入消息…（Enter 发送，Shift+Enter 换行）"></textarea>
         <div class="composer-row">
-          <button class="btn" id="send">发送</button>
-          <button class="btn stop" id="stop" style="display:none">暂停</button>
-          <span class="status" id="mode-line">普通对话</span>
+          <button class="btn" id="send" data-i18n="chat.send">发送</button>
+          <button class="btn stop" id="stop" style="display:none" data-i18n="chat.pause">暂停</button>
+          <span class="status" id="mode-line" data-i18n="chat.mode.normal">普通对话</span>
           <span class="spacer"></span>
-          <span class="status" id="sess-line">会话 —</span>
+          <span class="status" id="sess-line">—</span>
         </div>
       </section>
     </div>
 
     <aside class="side">
       <section class="panel card">
-        <h2>会话 <span class="hint">v2 · 分支 · 标注</span></h2>
-        <dl class="kv" id="sess-kv"><dt>状态</dt><dd>加载中…</dd></dl>
+        <h2><span data-i18n="session.heading">会话</span> <span class="hint" data-i18n="session.hint">v2 · 分支 · 标注</span></h2>
+        <dl class="kv" id="sess-kv"></dl>
         <div class="field" style="margin-top:10px">
-          <label for="sess-path">保存 / 加载路径（.clap 文件）</label>
-          <input id="sess-path" placeholder="/绝对路径/session.clap">
+          <label for="sess-path" data-i18n="session.savePath">保存 / 加载路径（.clap 文件）</label>
+          <input id="sess-path" placeholder="/absolute/path/session.clap">
         </div>
         <div class="composer-row">
-          <button class="btn ghost small" id="save-sess">保存</button>
-          <button class="btn ghost small" id="load-sess">加载</button>
+          <button class="btn ghost small" id="save-sess" data-i18n="session.save">保存</button>
+          <button class="btn ghost small" id="load-sess" data-i18n="session.load">加载</button>
         </div>
       </section>
 
       <section class="panel card">
-        <h2>分支 <span class="hint">点消息头的「分叉」</span></h2>
+        <h2><span data-i18n="branch.heading">分支</span> <span class="hint" data-i18n="branch.hint">点消息头的「分叉」</span></h2>
         <div class="branch-bar" id="branch-list"></div>
-        <p class="empty" id="branch-empty">只有一个主线分支</p>
+        <p class="empty" id="branch-empty" data-i18n="branch.empty">只有一个主线分支</p>
       </section>
 
       <section class="panel card">
-        <h2>标注 <span class="hint">F5 · 结构化标注</span></h2>
+        <h2><span data-i18n="annotate.heading">标注</span> <span class="hint" data-i18n="annotate.hint">结构化标注</span></h2>
         <form id="ann-form" autocomplete="off">
           <div class="field">
-            <label for="ann-target">消息 id（点消息头可自动填入）</label>
-            <input id="ann-target" placeholder="如 m3">
+            <label for="ann-target" data-i18n="annotate.target">消息 id（点消息头可自动填入）</label>
+            <input id="ann-target" placeholder="m3">
           </div>
           <div class="field">
-            <label for="ann-kind">类型</label>
+            <label for="ann-kind" data-i18n="annotate.kind">类型</label>
             <select id="ann-kind">
-              <option value="keypoint">重点</option>
-              <option value="question">疑问</option>
-              <option value="generated">生成</option>
-              <option value="reviewed">讲评</option>
-              <option value="error_fix">纠错</option>
-              <option value="knowledge_point">知识点</option>
+              <option value="keypoint" data-i18n="annotate.kind.keypoint">重点</option>
+              <option value="question" data-i18n="annotate.kind.question">疑问</option>
+              <option value="generated" data-i18n="annotate.kind.generated">生成</option>
+              <option value="reviewed" data-i18n="annotate.kind.reviewed">讲评</option>
+              <option value="error_fix" data-i18n="annotate.kind.error_fix">纠错</option>
+              <option value="knowledge_point" data-i18n="annotate.kind.knowledge_point">知识点</option>
             </select>
           </div>
           <div class="field">
-            <label for="ann-tags">标签（逗号分隔）</label>
-            <input id="ann-tags" placeholder="兼语句,语法">
+            <label for="ann-tags" data-i18n="annotate.tags">标签（逗号分隔）</label>
+            <input id="ann-tags">
           </div>
           <div class="field">
-            <label for="ann-note">备注</label>
+            <label for="ann-note" data-i18n="annotate.note">备注</label>
             <textarea id="ann-note"></textarea>
           </div>
           <div class="field">
-            <label for="ann-author">标注人</label>
+            <label for="ann-author" data-i18n="annotate.author">标注人</label>
             <input id="ann-author" value="teacher">
           </div>
           <div class="composer-row">
-            <button class="btn small" type="submit">写入标注</button>
-            <button class="btn ghost small" type="button" id="ann-export">导出 CSV</button>
+            <button class="btn small" type="submit" data-i18n="annotate.submit">写入标注</button>
+            <button class="btn ghost small" type="button" id="ann-export" data-i18n="annotate.exportCsv">导出 CSV</button>
           </div>
         </form>
         <div class="ann-list" id="ann-list"></div>
       </section>
 
       <section class="panel card">
-        <h2>知识库 <span class="hint">ZIM 外置库</span></h2>
-        <dl class="kv" id="zim-kv"><dt>加载中</dt><dd>…</dd></dl>
+        <h2><span data-i18n="kb.heading">知识库</span> <span class="hint" data-i18n="kb.hint">ZIM 外置库</span></h2>
+        <dl class="kv" id="zim-kv"></dl>
         <div class="actions" style="margin-top:8px">
-          <a class="btn ghost small" href="/kb">打开知识库</a>
+          <a class="btn ghost small" href="/kb" data-i18n="kb.open">打开知识库</a>
         </div>
       </section>
     </aside>
   </main>
 
   <footer class="footer">
-    <span>密钥只在内存中读取，界面与接口只显示掩码。</span>
-    <span>有依据模式：检索 ZIM → 闭世界作答 → 逐句审计。</span>
-    <span><a href="/api-docs">接口清单 →</a></span>
+    <span data-i18n="kb.footer1">密钥只在内存中读取，界面与接口只显示掩码。</span>
+    <span data-i18n="kb.footer2">有依据模式：检索 ZIM → 只依据资料回答 → 逐句核对来源。</span>
+    <span><a href="/api-docs" data-i18n="kb.footerLink">接口清单 →</a></span>
   </footer>
 </div>
 
-<!-- source drawer -->
-<aside class="drawer" id="drawer" aria-label="来源原文">
+<aside class="drawer" id="drawer" aria-label="来源">
   <header>
-    <h3 id="drawer-title">来源</h3>
-    <button class="icon-btn" id="drawer-close" title="关闭">×</button>
+    <h3 id="drawer-title" data-i18n="drawer.title">来源</h3>
+    <button class="icon-btn" id="drawer-close" data-i18n-title="common.close" title="关闭">×</button>
   </header>
   <div class="content" id="drawer-body"></div>
 </aside>
 
-<!-- generic modal -->
 <div class="modal" id="modal">
   <div class="box">
-    <header><h3 id="modal-title">结果</h3><button class="icon-btn" id="modal-close" title="关闭">×</button></header>
+    <header><h3 id="modal-title">—</h3><button class="icon-btn" id="modal-close" data-i18n-title="common.close" title="关闭">×</button></header>
     <div class="body" id="modal-body"></div>
     <footer id="modal-foot"></footer>
   </div>
@@ -157,9 +174,11 @@
 
 <div class="toast" id="toast"></div>
 
+<script>{% include "i18n.js" %}</script>
 <script>
 (function () {
   const $ = (id) => document.getElementById(id);
+  const T = (k, v) => CLAPi18n.t(k, v);
   const flow = $("flow");
   const input = $("input");
   const sendBtn = $("send");
@@ -167,20 +186,31 @@
   const modelSel = $("model");
   const statusEl = $("status");
   const groundedEl = $("grounded");
+  const langSel = $("lang");
 
-  const KIND_ZH = {
-    keypoint: "重点", question: "疑问", generated: "生成",
-    reviewed: "讲评", error_fix: "纠错", knowledge_point: "知识点"
+  const KIND_KEY = {
+    keypoint: "annotate.kind.keypoint", question: "annotate.kind.question",
+    generated: "annotate.kind.generated", reviewed: "annotate.kind.reviewed",
+    error_fix: "annotate.kind.error_fix", knowledge_point: "annotate.kind.knowledge_point"
   };
+  const kindText = (k) => T(KIND_KEY[k] || k);
 
   let currentStream = null;
   let turnNo = 0;
   let branchId = "";
   let zimList = [];
-  let zimFilter = [];        // empty = all
-  let renewSummary = "";     // set by 续期, cleared after next send
+  let zimFilter = [];
+  let renewSummary = "";
   let lastMessages = [];
+  let lastQuestion = "";
   let pausedFlag = false;
+  let busy = false;
+
+  langSel.value = CLAPi18n.lang;
+  const themeSel = $("theme");
+  themeSel.value = CLAPtheme.mode;
+  themeSel.addEventListener("change", () => CLAPtheme.setMode(themeSel.value));
+  CLAPtheme.onChange(() => { themeSel.value = CLAPtheme.mode; });
 
   function setStatus(text, bad) {
     statusEl.textContent = text;
@@ -204,44 +234,59 @@
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
 
-  // ---------------- citation rendering ----------------
+  // ---------------- citations ----------------
   const CITE_RE = /\[(\d+(?:\s*[,，]\s*\d+)*)\]/g;
   function renderRich(node, text) {
     node.innerHTML = esc(text).replace(CITE_RE, (m, nums) => {
-      const list = nums.split(/[,，]/).map((s) => s.trim()).join(",");
-      return '<span class="cite" data-n="' + esc(list) + '" title="点击查看来源原文">[' + esc(nums) + ']</span>';
+      return '<span class="cite" data-n="' + esc(nums) + '" title="' + esc(T("msg.citeTitle")) + '">[' + esc(nums) + ']</span>';
     });
     node.querySelectorAll(".cite").forEach((c) => {
-      c.addEventListener("click", () => openSourceByNumber(c.dataset.n));
+      c.addEventListener("click", () => openSourceByNumber(c.dataset.n, c.dataset.q || lastQuestion));
     });
   }
 
-  // ---------------- source drawer ----------------
-  function openSourceByNumber(nums) {
+  function openSourceByNumber(nums, question) {
     const n = String(nums).split(",")[0].trim();
     const msg = lastMessages.find((m) => (m.sources || []).some((s) => String(s.n) === n));
     const src = msg && (msg.sources || []).find((s) => String(s.n) === n);
-    if (!src) { toast("没有找到来源 " + n); return; }
-    openSource(src.zim, src.path, src.title);
+    if (!src) { toast(T("drawer.notFound", { n: n })); return; }
+    openSource(src.zim, src.path, src.title, question || "");
   }
-  async function openSource(zim, path, title) {
+  async function openSource(zim, path, title, question) {
     const drawer = $("drawer");
     $("drawer-title").textContent = title || path;
-    $("drawer-body").textContent = "加载中…";
+    $("drawer-body").textContent = T("drawer.loading");
     drawer.classList.add("open");
     try {
-      const r = await fetch("/api/zim/article?zim=" + encodeURIComponent(zim) + "&path=" + encodeURIComponent(path));
+      let url = "/api/zim/article?zim=" + encodeURIComponent(zim) + "&path=" + encodeURIComponent(path);
+      if (question) url += "&q=" + encodeURIComponent(question);
+      const r = await fetch(url);
       const j = await r.json();
-      if (!j.success) throw new Error(j.error || "读取失败");
+      if (!j.success) throw new Error(j.error || T("drawer.failed"));
       $("drawer-title").textContent = j.title || title || path;
-      const meta = el("div", "meta", j.zim + " · " + j.path + " · " + j.chars + " 字");
-      const body = el("div", "body", j.text);
       const wrap = $("drawer-body");
       wrap.innerHTML = "";
+      const meta = el("div", "meta", T("drawer.meta", { zim: j.zim, path: j.path, chars: j.chars }));
       wrap.appendChild(meta);
-      wrap.appendChild(body);
+      const body = el("div", "body");
+      const match = j.match;
+      if (match && match.start < match.end && match.end <= j.text.length) {
+        body.appendChild(document.createTextNode(j.text.slice(0, match.start)));
+        const mark = el("mark", "", j.text.slice(match.start, match.end));
+        mark.id = "src-highlight";
+        body.appendChild(mark);
+        body.appendChild(document.createTextNode(j.text.slice(match.end)));
+        wrap.appendChild(body);
+        setTimeout(() => {
+          const target = $("src-highlight");
+          if (target) target.scrollIntoView({ block: "center", behavior: "smooth" });
+        }, 80);
+      } else {
+        body.textContent = j.text;
+        wrap.appendChild(body);
+      }
     } catch (e) {
-      $("drawer-body").textContent = "读取失败：" + e.message;
+      $("drawer-body").textContent = T("drawer.failed") + e.message;
     }
   }
   $("drawer-close").addEventListener("click", () => $("drawer").classList.remove("open"));
@@ -266,14 +311,14 @@
     try {
       const r = await fetch("/api/models");
       const j = await r.json();
-      if (!j.success) throw new Error(j.error || "接口返回失败");
+      if (!j.success) throw new Error(j.error || T("chat.detectFailed"));
       modelSel.innerHTML = "";
       const available = (j.groups || []).filter((g) => g.available && !g.unsupported);
       const unavailable = (j.groups || []).filter((g) => !g.available || g.unsupported);
 
       available.forEach((g) => {
         const og = document.createElement("optgroup");
-        og.label = g.provider + (g.env ? "（env " + g.env + "）" : "");
+        og.label = g.provider + (g.env ? " (" + g.env + ")" : "");
         g.models.forEach((mid) => {
           const o = document.createElement("option");
           o.value = g.provider + "\u0000" + mid;
@@ -284,11 +329,14 @@
       });
       if (unavailable.length) {
         const og = document.createElement("optgroup");
-        og.label = "未配置 / 不可用（不发起调用）";
+        og.label = CLAPi18n.lang === "zh" ? "未配置 / 不可用（不发起调用）" : "Not configured / unavailable (never called)";
         unavailable.forEach((g) => {
           const o = document.createElement("option");
           o.disabled = true;
-          o.textContent = g.provider + " — " + (g.unsupported ? "协议不支持" : (g.configured ? "连接失败" : "未配置"));
+          o.textContent = g.provider + " — " +
+            (g.unsupported ? (CLAPi18n.lang === "zh" ? "协议不支持" : "unsupported protocol")
+              : (g.configured ? (CLAPi18n.lang === "zh" ? "连接失败" : "connection failed")
+                : (CLAPi18n.lang === "zh" ? "未配置" : "not configured")));
           og.appendChild(o);
         });
         modelSel.appendChild(og);
@@ -296,10 +344,10 @@
       const def = j.default || {};
       const wanted = def.provider + "\u0000" + def.model;
       if ([...modelSel.options].some((o) => o.value === wanted)) modelSel.value = wanted;
-      if (!available.length) setStatus("没有可用 provider，请配置环境变量凭证", true);
+      if (!available.length) setStatus(T("chat.noProvider"), true);
     } catch (e) {
-      modelSel.innerHTML = "<option>模型探测失败</option>";
-      setStatus("模型探测失败：" + e.message, true);
+      modelSel.innerHTML = "<option>" + esc(T("chat.detectFailed")) + "</option>";
+      setStatus(T("chat.detectFailed") + "：" + e.message, true);
     }
   }
 
@@ -311,26 +359,32 @@
   }
 
   // ---------------- ZIM ----------------
+  function zimShort(name) { return name.replace(/\.zim$/i, ""); }
+  function updateZimButton() {
+    $("zim-label").textContent = zimFilter.length ? zimFilter.map(zimShort).join(", ") : T("chat.zim.all");
+    $("zim-count").textContent = zimList.length ? "(" + zimList.length + ")" : "";
+  }
   async function loadZims() {
     try {
       const r = await fetch("/api/zim/list");
       const j = await r.json();
       zimList = (j.zims || []);
-      $("zim-count").textContent = zimList.length ? "（" + zimList.length + "）" : "（无）";
       const kv = $("zim-kv");
       kv.innerHTML = "";
       if (!zimList.length) {
-        kv.appendChild(el("dt", "", "状态"));
-        kv.appendChild(el("dd", "", "未发现 .zim（检查 CLAP_ZIM_ROOTS）"));
+        kv.appendChild(el("dt", "", T("session.status")));
+        kv.appendChild(el("dd", "", T("kb.none")));
       } else {
         zimList.forEach((z) => {
-          kv.appendChild(el("dt", "", z.name.replace(/\.zim$/i, "")));
-          kv.appendChild(el("dd", "", z.error ? ("无法读取：" + z.error) : (z.entries.toLocaleString() + " 条 · " + z.size_mb + " MB")));
+          kv.appendChild(el("dt", "", zimShort(z.name)));
+          kv.appendChild(el("dd", "", z.error
+            ? (T("kb.card.broken") + z.error)
+            : (z.entries.toLocaleString() + " · " + z.size_mb + " MB")));
         });
       }
       const menu = $("zim-menu");
       menu.innerHTML = "";
-      menu.appendChild(el("div", "muted", "选择参与检索的库（不选 = 全部）"));
+      menu.appendChild(el("div", "muted", T("chat.zim.menuHint")));
       zimList.forEach((z) => {
         const lab = document.createElement("label");
         const cb = document.createElement("input");
@@ -338,15 +392,15 @@
         cb.value = z.name;
         cb.addEventListener("change", () => {
           zimFilter = [...menu.querySelectorAll("input:checked")].map((x) => x.value);
-          $("zim-btn").innerHTML = "ZIM：" + (zimFilter.length ? zimFilter.map((n) => n.replace(/\.zim$/i, "")).join("、") : "全部") +
-            ' <span id="zim-count">（' + zimList.length + "）</span>";
+          updateZimButton();
         });
         lab.appendChild(cb);
-        lab.appendChild(el("span", "", z.name.replace(/\.zim$/i, "") + " · " + z.entries.toLocaleString() + " 条"));
+        lab.appendChild(el("span", "", zimShort(z.name) + " · " + z.entries.toLocaleString()));
         menu.appendChild(lab);
       });
+      updateZimButton();
     } catch (e) {
-      setStatus("ZIM 探测失败：" + e.message, true);
+      setStatus(T("chat.zimLoadFailed") + e.message, true);
     }
   }
   $("zim-btn").addEventListener("click", (e) => {
@@ -357,41 +411,56 @@
     if (!$("zim-menu").contains(e.target) && e.target !== $("zim-btn")) $("zim-menu").classList.remove("open");
   });
 
-  // ---------------- message rendering ----------------
+  // ---------------- messages ----------------
   function badge(kind) {
-    const b = el("span", "badge k-" + kind, KIND_ZH[kind] || kind);
-    b.title = "标注：" + (KIND_ZH[kind] || kind);
+    const b = el("span", "badge k-" + kind, kindText(kind));
     return b;
+  }
+
+  function auditText(audit) {
+    const pct = Math.round((audit.score || 0) * 100);
+    return T("audit.score", { pct: pct, g: audit.sentences_grounded || 0, t: audit.sentences_total || 0 }) +
+      (audit.sentences_unverified ? T("audit.unverified", { n: audit.sentences_unverified }) : "");
   }
 
   function msgNode(m, anns) {
     const role = m.role === "user" ? "user" : (m.role === "system" ? "system" : "assistant");
     const wrap = el("article", "msg " + role);
-
     const head = el("div", "msg-head");
+
     if (role === "user") turnNo += 1;
     head.appendChild(el("span", "turn", "#" + (role === "user" ? turnNo : Math.max(turnNo, 1))));
-    head.appendChild(el("span", "who", role === "user" ? "教师" : (role === "system" ? "系统" : "助手")));
-    if (m.provider || m.model) {
-      head.appendChild(el("span", "prov", (m.provider || "?") + " · " + (m.model || "?")));
-    }
+    head.appendChild(el("span", "who", T("msg." + (role === "user" ? "teacher" : (role === "system" ? "system" : "assistant")))));
+    if (m.provider || m.model) head.appendChild(el("span", "prov", (m.provider || "?") + " · " + (m.model || "?")));
     if (m.latency_ms != null) head.appendChild(el("span", "", m.latency_ms + " ms"));
-    if (m.tokens && m.tokens.out != null) head.appendChild(el("span", "", "输出 " + m.tokens.out + " tok"));
-    if (m.error === "cancelled") head.appendChild(el("span", "paused-tag", "已暂停"));
+    if (m.tokens && m.tokens.out != null) head.appendChild(el("span", "", T("msg.outTokens", { n: m.tokens.out })));
+    if (m.error === "cancelled") head.appendChild(el("span", "paused-tag", T("chat.pausedTag")));
     if (m.id) {
       const idEl = el("span", "mid", m.id);
-      idEl.title = "点击填入标注目标";
+      idEl.title = T("msg.clickToAnnotate");
       idEl.style.cursor = "pointer";
-      idEl.addEventListener("click", () => {
-        $("ann-target").value = m.id;
-        $("ann-target").focus();
-      });
+      idEl.addEventListener("click", () => { $("ann-target").value = m.id; $("ann-target").focus(); });
       head.appendChild(idEl);
-      const forkBtn = el("button", "src-btn", "分叉");
+      const forkBtn = el("button", "src-btn", T("msg.fork"));
       forkBtn.type = "button";
-      forkBtn.title = "从这条消息分出新分支";
+      forkBtn.title = T("msg.forkTitle");
       forkBtn.addEventListener("click", () => forkAt(m.id));
       head.appendChild(forkBtn);
+    }
+    if (m.edited_from) head.appendChild(el("span", "paused-tag", T("chat.editedTag")));
+    if (m.id && role === "user") {
+      const editBtn = el("button", "src-btn", T("chat.edit"));
+      editBtn.type = "button";
+      editBtn.title = T("chat.editTitle");
+      editBtn.addEventListener("click", () => openEditModal(m));
+      head.appendChild(editBtn);
+    }
+    if (role === "assistant" && m.parent) {
+      const reBtn = el("button", "src-btn", T("chat.regenerate"));
+      reBtn.type = "button";
+      reBtn.title = T("chat.regenerateTitle");
+      reBtn.addEventListener("click", () => regenerate(m.parent));
+      head.appendChild(reBtn);
     }
     if (anns && anns.length) {
       const bs = el("span", "badges");
@@ -402,22 +471,25 @@
 
     const bubble = el("div", "bubble" + (m.error ? " err" : ""), "");
     if (m.role === "system") bubble.style.opacity = ".72";
-    renderRich(bubble, m.content || "");
+    if (m.html) {
+      bubble.innerHTML = m.html;
+      bubble.querySelectorAll(".cite").forEach((c) => {
+        c.addEventListener("click", () => openSourceByNumber(c.dataset.n, c.dataset.q || lastQuestion));
+      });
+    } else {
+      renderRich(bubble, m.content || "");
+    }
     wrap.appendChild(bubble);
-    if (m.error && m.error !== "cancelled") wrap.appendChild(el("div", "err-text", "调用失败：" + m.error));
+    if (m.error && m.error !== "cancelled") wrap.appendChild(el("div", "err-text", T("chat.callFailed") + m.error));
 
-    // evidence footer
     const audit = m.audit || null;
     const sources = m.sources || [];
     if (audit) {
       const pct = Math.round((audit.score || 0) * 100);
       const ev = el("div", "evidence");
-      const pill = el("span", "audit-pill" + (pct < 60 ? " warn" : ""),
-        "依据度 " + pct + "% · " + (audit.sentences_grounded || 0) + "/" + (audit.sentences_total || 0) + " 句有据" +
-        (audit.sentences_unverified ? " · " + audit.sentences_unverified + " 句跨语言未核验" : ""));
-      ev.appendChild(pill);
-      if ((audit.sentences || []).some((s) => !s.grounded)) {
-        const b = el("button", "src-btn", "查看无据句");
+      ev.appendChild(el("span", "audit-pill" + (pct < 60 ? " warn" : ""), auditText(audit)));
+      if ((audit.sentences || []).some((s) => !s.grounded && s.verified !== false)) {
+        const b = el("button", "src-btn", T("audit.showIssues"));
         b.type = "button";
         b.addEventListener("click", () => showAudit(audit));
         ev.appendChild(b);
@@ -427,10 +499,11 @@
     if (sources.length) {
       const ev = el("div", "evidence");
       sources.forEach((s) => {
-        const b = el("button", "src-btn", "[" + s.n + "] " + (s.title || s.path).slice(0, 28) + (s.title && s.title.length > 28 ? "…" : ""));
+        const label = "[" + s.n + "] " + (s.title || s.path);
+        const b = el("button", "src-btn", label.length > 34 ? label.slice(0, 34) + "…" : label);
         b.type = "button";
         b.title = s.zim + " · " + s.path;
-        b.addEventListener("click", () => openSource(s.zim, s.path, s.title));
+        b.addEventListener("click", () => openSource(s.zim, s.path, s.title, lastQuestion));
         ev.appendChild(b);
       });
       wrap.appendChild(ev);
@@ -443,12 +516,14 @@
     (audit.sentences || []).forEach((s) => {
       const row = el("div", "ann-item");
       row.style.cursor = "default";
-      row.appendChild(el("span", "badge" + (s.grounded ? "" : " k-error_fix"), s.grounded ? "有据" : "无据"));
+      const state = s.grounded ? T("audit.grounded") : (s.verified === false ? T("audit.unverifiedRow") : T("audit.ungrounded"));
+      row.appendChild(el("span", "badge" + (s.grounded ? "" : " k-error_fix"), state));
       row.appendChild(el("span", "", s.text));
-      row.appendChild(el("span", "n", s.reason || ""));
+      const reason = s.code ? T("audit.code." + s.code) : (s.reason || "");
+      row.appendChild(el("span", "n", reason));
       box.appendChild(row);
     });
-    openModal("逐句审计（依据度 " + Math.round((audit.score || 0) * 100) + "%）", box, []);
+    openModal(T("audit.modalTitle", { pct: Math.round((audit.score || 0) * 100) }), box, []);
   }
 
   // ---------------- session ----------------
@@ -462,9 +537,7 @@
       branchId = j.branch_id || "";
       lastMessages = j.messages || [];
       flow.innerHTML = "";
-      if (!lastMessages.length) {
-        flow.appendChild(el("p", "empty", "还没有消息。选好模型后输入问题，按 Enter 发送。"));
-      }
+      if (!lastMessages.length) flow.appendChild(el("p", "empty", T("chat.empty")));
       lastMessages.forEach((m) => {
         const anns = (j.annotations || []).filter((a) => a.target === m.id);
         flow.appendChild(msgNode(m, anns).wrap);
@@ -474,35 +547,31 @@
       const kv = $("sess-kv");
       kv.innerHTML = "";
       const rows = [
-        ["会话", j.session_id],
-        ["消息", lastMessages.length + " 条"],
-        ["标注", (j.annotations || []).length + " 条"],
-        ["分支", (j.branches || []).length + " 个"]
+        [T("session.heading"), j.session_id],
+        [CLAPi18n.lang === "zh" ? "消息" : "Messages", lastMessages.length],
+        [T("annotate.heading"), (j.annotations || []).length],
+        [T("branch.heading"), (j.branches || []).length]
       ];
-      rows.forEach(([k, v]) => { kv.appendChild(el("dt", "", k)); kv.appendChild(el("dd", "", v)); });
-      $("sess-line").textContent = "会话 " + j.session_id + " · " + lastMessages.length + " 条";
+      rows.forEach(([k, v]) => { kv.appendChild(el("dt", "", k)); kv.appendChild(el("dd", "", String(v))); });
+      $("sess-line").textContent = T("chat.sessionLine", { id: j.session_id, n: lastMessages.length });
 
       const bar = $("branch-bar");
       bar.innerHTML = "";
       (j.branches || []).forEach((b) => {
         const pill = el("button", "branch-pill" + (b.id === branchId ? " on" : ""), b.name || b.id);
         pill.type = "button";
-        pill.appendChild(el("small", "", "· " + (b.turns || 0) + " 问"));
+        pill.appendChild(el("small", "", T("branch.turns", { n: b.turns || 0 })));
         pill.addEventListener("click", () => loadSession(b.id));
         bar.appendChild(pill);
       });
 
       const bl = $("branch-list");
       bl.innerHTML = "";
-      if (!(j.branches || []).length) {
-        $("branch-empty").style.display = "";
-      } else {
-        $("branch-empty").style.display = "none";
-      }
+      $("branch-empty").style.display = (j.branches || []).length ? "none" : "";
 
       const list = $("ann-list");
       list.innerHTML = "";
-      if (!(j.annotations || []).length) list.appendChild(el("p", "empty", "暂无标注"));
+      if (!(j.annotations || []).length) list.appendChild(el("p", "empty", T("annotate.empty")));
       (j.annotations || []).forEach((a) => {
         const it = el("div", "ann-item");
         it.appendChild(badge(a.kind));
@@ -511,51 +580,45 @@
         if (a.note) it.appendChild(el("span", "n", a.note));
         list.appendChild(it);
       });
-      $("mode-line").textContent = groundedEl.checked ? "有依据模式" : "普通对话";
     } catch (e) {
-      setStatus("会话加载失败：" + e.message, true);
+      setStatus(T("chat.sessionLoadFailed") + e.message, true);
     }
   }
 
-  groundedEl.addEventListener("change", () => {
-    $("mode-line").textContent = groundedEl.checked ? "有依据模式（先检索 ZIM，再闭世界作答）" : "普通对话";
-  });
+  function syncModeLine() {
+    $("mode-line").textContent = groundedEl.checked ? T("chat.mode.grounded") : T("chat.mode.normal");
+  }
+  groundedEl.addEventListener("change", syncModeLine);
 
   // ---------------- chat ----------------
-  async function send() {
-    const text = input.value.trim();
-    if (!text) return;
-    const sel = selected();
-    if (!sel.provider) { setStatus("请先选择一个可用模型", true); return; }
+  function basePayload(sel) {
+    const p = { provider: sel.provider, model: sel.model, branch: branchId || undefined, lang: CLAPi18n.lang };
+    if (groundedEl.checked) {
+      p.grounded = true;
+      if (zimFilter.length) p.zims = zimFilter;
+      p.top_k = 6;
+    }
+    return p;
+  }
 
-    input.value = "";
+  async function streamChat(payload, opts) {
+    opts = opts || {};
+    if (busy) return;
+    busy = true;
     sendBtn.disabled = true;
     stopBtn.style.display = "";
     stopBtn.disabled = false;
     pausedFlag = false;
-    setStatus(groundedEl.checked ? "检索材料并生成…" : "正在生成…");
+    setStatus(opts.status || T("chat.generating"));
 
-    const userNode = msgNode({ role: "user", content: text, id: "" }, []).wrap;
-    const ai = msgNode({ role: "assistant", content: "", provider: sel.provider, model: sel.model, id: "" }, []);
     if (flow.querySelector(".empty")) flow.innerHTML = "";
-    flow.appendChild(userNode);
+    if (opts.optimisticUser) {
+      flow.appendChild(msgNode({ role: "user", content: opts.optimisticUser, id: "" }, []).wrap);
+    }
+    const ai = msgNode({ role: "assistant", content: "", provider: payload.provider, model: payload.model, id: "" }, []);
     flow.appendChild(ai.wrap);
     flow.scrollTop = flow.scrollHeight;
 
-    const payload = {
-      message: text,
-      provider: sel.provider,
-      model: sel.model,
-      branch: branchId || undefined
-    };
-    if (groundedEl.checked) {
-      payload.grounded = true;
-      if (zimFilter.length) payload.zims = zimFilter;
-      payload.top_k = 6;
-    }
-    if (renewSummary) { payload.renew_summary = renewSummary; }
-
-    let sources = [];
     let audit = null;
     try {
       const resp = await fetch("/api/chat", {
@@ -582,7 +645,6 @@
           if (!line.startsWith("data:")) continue;
           const evt = JSON.parse(line.slice(5).trim());
           if (evt.start) currentStream = evt.stream_id;
-          if (evt.sources) sources = evt.sources;
           if (evt.delta) {
             acc += evt.delta;
             ai.bubble.textContent = acc;
@@ -591,34 +653,85 @@
           if (evt.done) {
             const m = evt.meta || {};
             audit = m.audit || null;
-            sources = m.sources || sources;
             if (m.error === "cancelled") {
               pausedFlag = true;
               if (!ai.wrap.querySelector(".paused-tag")) {
-                ai.wrap.querySelector(".msg-head").appendChild(el("span", "paused-tag", "已暂停"));
+                ai.wrap.querySelector(".msg-head").appendChild(el("span", "paused-tag", T("chat.pausedTag")));
               }
-              setStatus("已暂停 · 已保留已生成内容");
+              setStatus(T("chat.paused"));
             } else if (m.error) {
               ai.bubble.classList.add("err");
-              ai.wrap.appendChild(el("div", "err-text", "调用失败：" + m.error));
-              setStatus("请求结束（有错误）", true);
+              ai.wrap.appendChild(el("div", "err-text", T("chat.callFailed") + m.error));
+              setStatus(T("chat.finishedError"), true);
             } else {
-              setStatus("完成 · " + m.latency_ms + " ms" + (audit ? " · 依据度 " + Math.round(audit.score * 100) + "%" : ""));
+              setStatus(audit
+                ? T("chat.doneWithAudit", { ms: m.latency_ms, pct: Math.round(audit.score * 100) })
+                : T("chat.done", { ms: m.latency_ms }));
             }
           }
         }
       }
     } catch (e) {
       ai.bubble.classList.add("err");
-      ai.wrap.appendChild(el("div", "err-text", "请求失败：" + e.message));
-      setStatus("请求失败：" + e.message, true);
+      ai.wrap.appendChild(el("div", "err-text", T("chat.requestFailed") + e.message));
+      setStatus(T("chat.requestFailed") + e.message, true);
     } finally {
+      busy = false;
       currentStream = null;
       sendBtn.disabled = false;
       stopBtn.style.display = "none";
       if (renewSummary && !pausedFlag) renewSummary = "";
       await loadSession(branchId);
     }
+  }
+
+  async function send() {
+    if (busy) return;
+    const text = input.value.trim();
+    if (!text) return;
+    const sel = selected();
+    if (!sel.provider) { setStatus(T("chat.pickModel"), true); return; }
+    input.value = "";
+    lastQuestion = text;
+    const payload = Object.assign(basePayload(sel), { message: text });
+    if (renewSummary) payload.renew_summary = renewSummary;
+    await streamChat(payload, {
+      optimisticUser: text,
+      status: groundedEl.checked ? T("chat.retrieving") : T("chat.generating")
+    });
+  }
+
+  async function regenerate(userId) {
+    if (busy) return;
+    const sel = selected();
+    if (!sel.provider) { setStatus(T("chat.pickModel"), true); return; }
+    const payload = Object.assign(basePayload(sel), { mode: "regenerate", message_id: userId });
+    await streamChat(payload, { status: T("chat.regenerating") });
+  }
+
+  function openEditModal(m) {
+    const wrap = el("div", "");
+    wrap.appendChild(el("p", "", T("chat.editHint")));
+    const ta = document.createElement("textarea");
+    ta.value = m.content || "";
+    ta.style.cssText = "width:100%;min-height:150px;margin-top:8px;font:inherit;font-size:15px;line-height:1.6;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:10px 12px;resize:vertical";
+    wrap.appendChild(ta);
+    const cancel = el("button", "btn ghost small", T("common.cancel"));
+    cancel.type = "button";
+    cancel.addEventListener("click", closeModal);
+    const go = el("button", "btn small", T("chat.editSubmit"));
+    go.type = "button";
+    go.addEventListener("click", async () => {
+      const text = ta.value.trim();
+      if (!text) return;
+      closeModal();
+      const sel = selected();
+      if (!sel.provider) { setStatus(T("chat.pickModel"), true); return; }
+      lastQuestion = text;
+      const payload = Object.assign(basePayload(sel), { mode: "edit", message_id: m.id, message: text });
+      await streamChat(payload, { optimisticUser: text, status: T("chat.editing") });
+    });
+    openModal(T("chat.editTitle"), wrap, [cancel, go]);
   }
 
   sendBtn.addEventListener("click", send);
@@ -628,14 +741,14 @@
 
   stopBtn.addEventListener("click", async () => {
     stopBtn.disabled = true;
-    setStatus("正在暂停…");
+    setStatus(T("chat.pausing"));
     try {
       await fetch("/api/chat/stop", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ stream_id: currentStream || "" })
       });
-    } catch (e) { /* stream teardown reports */ }
+    } catch (e) { /* the stream teardown reports */ }
   });
 
   // ---------------- lifecycle actions ----------------
@@ -643,7 +756,7 @@
     await fetch("/api/session/new", { method: "POST" });
     renewSummary = "";
     await loadSession();
-    setStatus("已新建会话");
+    setStatus(T("chat.newDone"));
   });
 
   $("btn-export").addEventListener("click", () => {
@@ -651,19 +764,19 @@
     const row = el("div", "composer-row");
     const sel = document.createElement("select");
     sel.style.cssText = "font:inherit;padding:7px 10px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink)";
-    [["md", "Markdown"], ["html", "HTML（零外链）"], ["json", "JSON"]].forEach(([v, t]) => {
-      const o = document.createElement("option"); o.value = v; o.textContent = t; sel.appendChild(o);
+    [["md", T("export.markdown")], ["html", T("export.html")], ["json", T("export.json")]].forEach(([v, tx]) => {
+      const o = document.createElement("option"); o.value = v; o.textContent = tx; sel.appendChild(o);
     });
     const path = document.createElement("input");
-    path.placeholder = "保存路径（可空，留空只预览）";
+    path.placeholder = T("export.pathPlaceholder");
     path.style.cssText = "flex:1;min-width:220px;font:inherit;padding:7px 10px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink)";
     const pre = el("pre", "");
-    pre.textContent = "选择格式后点「生成」";
+    pre.textContent = T("export.hint");
     row.appendChild(sel); row.appendChild(path);
     wrap.appendChild(row);
     wrap.appendChild(pre);
 
-    const gen = el("button", "btn small", "生成");
+    const gen = el("button", "btn small", T("common.generate"));
     gen.type = "button";
     gen.addEventListener("click", async () => {
       gen.disabled = true;
@@ -674,22 +787,22 @@
           body: JSON.stringify({ format: sel.value, branch: branchId || undefined, path: path.value.trim() || undefined })
         });
         const j = await r.json();
-        if (!j.success) throw new Error(j.error || "导出失败");
-        pre.textContent = j.content || ("已保存到 " + j.path);
-        toast(j.path ? ("已保存 → " + j.path) : ("已生成 " + j.chars + " 字符"));
+        if (!j.success) throw new Error(j.error || T("export.failed"));
+        pre.textContent = j.content || (T("chat.saved", { path: j.path }));
+        toast(j.path ? T("chat.saved", { path: j.path }) : T("export.generated", { n: j.chars }));
       } catch (e) {
-        pre.textContent = "导出失败：" + e.message;
+        pre.textContent = T("export.failed") + e.message;
       } finally {
         gen.disabled = false;
       }
     });
-    const copy = el("button", "btn ghost small", "复制");
+    const copy = el("button", "btn ghost small", T("common.copy"));
     copy.type = "button";
     copy.addEventListener("click", async () => {
-      try { await navigator.clipboard.writeText(pre.textContent); toast("已复制"); }
-      catch (e) { toast("复制失败：" + e.message); }
+      try { await navigator.clipboard.writeText(pre.textContent); toast(T("export.copied")); }
+      catch (e) { toast(T("export.copyFailed") + e.message); }
     });
-    openModal("导出会话", wrap, [copy, gen]);
+    openModal(T("export.title"), wrap, [copy, gen]);
   });
 
   $("btn-share").addEventListener("click", async () => {
@@ -698,18 +811,18 @@
         method: "POST", headers: { "Content-Type": "application/json" }, body: "{}"
       });
       const j = await r.json();
-      if (!j.success) throw new Error(j.error || "分享失败");
+      if (!j.success) throw new Error(j.error || T("share.failed"));
       const box = el("div", "");
-      box.appendChild(el("p", "", "已生成分享包（不含任何密钥与本地路径）："));
-      const pre = el("pre", ""); pre.textContent = j.package + "\n" + (j.size || 0) + " 字节";
+      box.appendChild(el("p", "", T("share.intro")));
+      const pre = el("pre", ""); pre.textContent = j.package + "\n" + (j.size || 0) + " bytes";
       box.appendChild(pre);
-      const note = el("p", "", "对方在「知识库 → 导入分享包」或 POST /api/session/adopt 里导入即可。");
+      const note = el("p", "", T("share.note"));
       note.style.cssText = "color:var(--ink-soft);font-size:14px;margin-top:8px";
       box.appendChild(note);
-      openModal("分享包已生成", box, []);
-      toast("分享包已生成");
+      openModal(T("share.title"), box, []);
+      toast(T("share.done"));
     } catch (e) {
-      setStatus("分享失败：" + e.message, true);
+      setStatus(T("share.failed") + e.message, true);
     }
   });
 
@@ -720,58 +833,57 @@
         body: JSON.stringify({ branch: branchId || undefined })
       });
       const j = await r.json();
-      if (!j.success) throw new Error(j.error || "续期失败");
+      if (!j.success) throw new Error(j.error || T("renew.failed"));
       renewSummary = j.summary;
       const box = el("div", "");
-      box.appendChild(el("p", "", "已生成续期摘要：下一条消息将自动携带它，并丢弃冗余上下文。"));
-      const meta = el("p", "",
-        "消息 " + j.messages + " 条 · 约 " + j.est_tokens_before + " → " + j.est_tokens_after + " tokens");
+      box.appendChild(el("p", "", T("renew.intro")));
+      const meta = el("p", "", T("renew.meta", { n: j.messages, before: j.est_tokens_before, after: j.est_tokens_after }));
       meta.style.cssText = "color:var(--ink-soft);font-size:13.5px;margin:6px 0 10px";
       box.appendChild(meta);
       const pre = el("pre", ""); pre.textContent = j.summary;
       box.appendChild(pre);
-      openModal("会话续期", box, []);
-      toast("续期摘要已就绪，下一条消息自动携带");
-      setStatus("续期就绪（下一条消息携带摘要）");
+      openModal(T("renew.title"), box, []);
+      toast(T("renew.ready"));
+      setStatus(T("renew.ready"));
     } catch (e) {
-      setStatus("续期失败：" + e.message, true);
+      setStatus(T("renew.failed") + e.message, true);
     }
   });
 
   async function forkAt(msgId) {
-    const name = prompt("新分支名称（可空）", "");
+    const name = prompt(T("branch.forkPrompt"), "");
     try {
       const r = await fetch("/api/session/fork", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ at: msgId, name: name || "", note: "" })
       });
       const j = await r.json();
-      if (!j.success) throw new Error(j.error || "分叉失败");
-      toast("已分叉：" + j.branch.id);
+      if (!j.success) throw new Error(j.error || T("branch.forkFailed"));
+      toast(T("branch.forked", { id: j.branch.id }));
       await loadSession(j.branch.id);
     } catch (e) {
-      setStatus("分叉失败：" + e.message, true);
+      setStatus(T("branch.forkFailed") + e.message, true);
     }
   }
 
   $("save-sess").addEventListener("click", async () => {
     const p = $("sess-path").value.trim();
-    if (!p) { setStatus("请先填写保存路径", true); return; }
+    if (!p) { setStatus(T("chat.needSavePath"), true); return; }
     const r = await fetch("/api/session/save", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: p })
     });
     const j = await r.json();
-    setStatus(j.success ? "已保存到 " + j.path : "保存失败：" + j.error, !j.success);
+    setStatus(j.success ? T("chat.saved", { path: j.path }) : T("chat.saveFailed") + j.error, !j.success);
   });
 
   $("load-sess").addEventListener("click", async () => {
     const p = $("sess-path").value.trim();
-    if (!p) { setStatus("请先填写加载路径", true); return; }
+    if (!p) { setStatus(T("chat.needLoadPath"), true); return; }
     const r = await fetch("/api/session/load", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: p })
     });
     const j = await r.json();
-    setStatus(j.success ? "已加载 " + j.path : "加载失败：" + j.error, !j.success);
+    setStatus(j.success ? T("chat.loaded", { path: j.path }) : T("chat.loadFailed") + j.error, !j.success);
     if (j.success) await loadSession();
   });
 
@@ -779,7 +891,7 @@
   $("ann-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     const target = $("ann-target").value.trim();
-    if (!target) { setStatus("请填写标注目标消息 id", true); return; }
+    if (!target) { setStatus(T("annotate.needTarget"), true); return; }
     const body = {
       target,
       kind: $("ann-kind").value,
@@ -792,24 +904,24 @@
     });
     const j = await r.json();
     if (j.success) {
-      setStatus("已标注 " + j.annotation.target + "（" + (KIND_ZH[j.annotation.kind] || j.annotation.kind) + "）");
+      setStatus(T("annotate.added", { id: j.annotation.target, kind: kindText(j.annotation.kind) }));
       $("ann-note").value = "";
       await loadSession(branchId);
     } else {
-      setStatus("标注失败：" + j.error, true);
+      setStatus(T("annotate.failed") + j.error, true);
     }
   });
 
   $("ann-export").addEventListener("click", async () => {
     const p = $("sess-path").value.trim();
     const out = p ? p.replace(/\.clap$/i, "") + ".annotations.csv" : "";
-    if (!out) { setStatus("先在会话卡片填写一个 .clap 路径，导出文件会放在它旁边", true); return; }
+    if (!out) { setStatus(T("annotate.needSavePath"), true); return; }
     const r = await fetch("/api/annotate/export", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ path: out, format: "csv" })
     });
     const j = await r.json();
-    setStatus(j.success ? "已导出 " + j.rows + " 条 → " + j.path : "导出失败：" + j.error, !j.success);
+    setStatus(j.success ? T("annotate.exported", { n: j.rows, path: j.path }) : T("annotate.exportFailed") + j.error, !j.success);
   });
 
   $("tl-link").addEventListener("click", async (e) => {
@@ -821,11 +933,287 @@
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: p })
       });
       const j = await r.json();
-      if (!j.success) { setStatus("时间轴导出失败：" + j.error, true); return; }
+      if (!j.success) { setStatus(T("timeline.failed") + j.error, true); return; }
     }
     window.open("/timeline?file=" + encodeURIComponent(p), "_blank", "noopener");
   });
 
+  // ---------------- settings ----------------
+  async function openSettings() {
+    let data;
+    try {
+      const r = await fetch("/api/settings");
+      data = await r.json();
+      if (!data.success) throw new Error(data.error || "settings");
+    } catch (e) {
+      setStatus(T("settings.saveFailed") + e.message, true);
+      return;
+    }
+    const wrap = el("div", "settings");
+
+    // ---- default model ----
+    const defSec = el("section", "settings-section");
+    defSec.appendChild(el("h4", "", T("settings.default")));
+    defSec.appendChild(el("p", "muted", T("settings.defaultHint")));
+    const defRow = el("div", "composer-row");
+    const psel = document.createElement("select");
+    psel.className = "model-select";
+    const msel = document.createElement("select");
+    msel.className = "model-select";
+    const configured = (data.providers || []).filter((p) => p.configured);
+    configured.forEach((p) => {
+      const o = document.createElement("option");
+      o.value = p.id;
+      o.textContent = p.id;
+      psel.appendChild(o);
+    });
+    const fillModels = () => {
+      msel.innerHTML = "";
+      const row = (data.providers || []).find((p) => p.id === psel.value);
+      ((row && row.models) || []).forEach((m) => {
+        const o = document.createElement("option");
+        o.value = m;
+        o.textContent = m;
+        msel.appendChild(o);
+      });
+      if (row && data.default && data.default.provider === row.id) msel.value = data.default.model;
+    };
+    psel.value = (data.default && data.default.provider) || (configured[0] && configured[0].id) || "";
+    psel.addEventListener("change", fillModels);
+    fillModels();
+    const saveDefaultBtn = el("button", "btn small", T("settings.save"));
+    saveDefaultBtn.type = "button";
+    saveDefaultBtn.addEventListener("click", async () => {
+      try {
+        const rr = await fetch("/api/settings/default", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ provider: psel.value, model: msel.value })
+        });
+        const jj = await rr.json();
+        if (!jj.success) throw new Error(jj.error || "");
+        toast(T("settings.saved"));
+        await loadModels();
+        await loadSession(branchId);
+        openSettings();
+      } catch (e) {
+        toast(T("settings.saveFailed") + e.message);
+      }
+    });
+    defRow.appendChild(psel);
+    defRow.appendChild(msel);
+    defRow.appendChild(saveDefaultBtn);
+    defSec.appendChild(defRow);
+    wrap.appendChild(defSec);
+
+    // ---- provider list ----
+    const listSec = el("section", "settings-section");
+    listSec.appendChild(el("h4", "", T("settings.providers")));
+    const list = el("div", "provider-list");
+    if (!(data.providers || []).length) list.appendChild(el("p", "muted", T("settings.noProviders")));
+    (data.providers || []).forEach((p) => {
+      const row = el("div", "provider-row");
+      const head = el("div", "provider-head");
+      head.appendChild(el("b", "", p.id));
+      head.appendChild(el("span", "chip " + (p.configured ? "on" : ""), p.configured ? T("settings.configured") : T("settings.notConfigured")));
+      const srcKey = p.source === "settings" ? "settings.sourceSettings"
+        : (p.source === "discovered" ? "settings.sourceDiscovered" : "settings.sourceInventory");
+      head.appendChild(el("span", "chip", T(srcKey)));
+      row.appendChild(head);
+      row.appendChild(el("div", "muted", (p.base || "—")));
+      const masked = el("div", "muted", p.masked || T("settings.notConfigured"));
+      row.appendChild(masked);
+
+      const actions = el("div", "composer-row");
+      const editBtn = el("button", "btn ghost small", T("settings.edit"));
+      editBtn.type = "button";
+      editBtn.addEventListener("click", () => {
+        const form = el("div", "provider-form");
+        const base = document.createElement("input");
+        base.placeholder = "Base URL";
+        base.value = p.base || "";
+        const key = document.createElement("input");
+        key.type = "password";
+        key.placeholder = T("settings.key") + "（" + T("settings.keyKeep") + "）";
+        const models = document.createElement("input");
+        models.placeholder = T("settings.models");
+        models.value = (p.models_manual && p.models_manual.length ? p.models_manual : []).join(", ");
+        const hint = el("p", "muted", T("settings.keyHint") + " " + T("settings.modelsHint"));
+        const save = el("button", "btn small", T("settings.save"));
+        save.type = "button";
+        save.addEventListener("click", async () => {
+          try {
+            const rr = await fetch("/api/settings/provider", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                id: p.id,
+                base: base.value.trim(),
+                key: key.value.trim() || undefined,
+                models: models.value
+              })
+            });
+            const jj = await rr.json();
+            if (!jj.success) throw new Error(jj.error || T("settings.invalid"));
+            toast(T("settings.saved"));
+            resetAfterSettings();
+          } catch (e) {
+            toast(T("settings.saveFailed") + e.message);
+          }
+        });
+        form.appendChild(base);
+        form.appendChild(key);
+        form.appendChild(models);
+        form.appendChild(hint);
+        form.appendChild(save);
+        row.appendChild(form);
+        editBtn.disabled = true;
+      });
+      actions.appendChild(editBtn);
+
+      const testBtn = el("button", "btn ghost small", T("settings.test"));
+      testBtn.type = "button";
+      testBtn.addEventListener("click", async () => {
+        testBtn.disabled = true;
+        testBtn.textContent = T("settings.testing");
+        try {
+          const rr = await fetch("/api/settings/test", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: p.id, lang: CLAPi18n.lang })
+          });
+          const jj = await rr.json();
+          if (!jj.success) throw new Error(jj.error || "");
+          toast((jj.available ? T("settings.testOk") : T("settings.testFailed")) + " · " + ((jj.models || []).length) + " models");
+        } catch (e) {
+          toast(T("settings.testFailed") + e.message);
+        } finally {
+          testBtn.disabled = false;
+          testBtn.textContent = T("settings.test");
+        }
+      });
+      actions.appendChild(testBtn);
+
+      if (p.source === "settings") {
+        const del = el("button", "btn ghost small", T("settings.remove"));
+        del.type = "button";
+        del.addEventListener("click", async () => {
+          if (!confirm(T("settings.confirmRemove"))) return;
+          await fetch("/api/settings/provider/" + encodeURIComponent(p.id), { method: "DELETE" });
+          toast(T("settings.saved"));
+          resetAfterSettings();
+        });
+        actions.appendChild(del);
+      }
+      row.appendChild(actions);
+      list.appendChild(row);
+    });
+    listSec.appendChild(list);
+    wrap.appendChild(listSec);
+
+    // ---- add provider ----
+    const addSec = el("section", "settings-section");
+    addSec.appendChild(el("h4", "", T("settings.add")));
+    const addForm = el("div", "provider-form");
+    const idIn = document.createElement("input");
+    idIn.placeholder = T("settings.id");
+    const baseIn = document.createElement("input");
+    baseIn.placeholder = "Base URL（如 api.deepseek.com/v1）";
+    const keyIn = document.createElement("input");
+    keyIn.type = "password";
+    keyIn.placeholder = T("settings.key");
+    const modelsIn = document.createElement("input");
+    modelsIn.placeholder = T("settings.models");
+    const addBtn = el("button", "btn small", T("settings.add"));
+    addBtn.type = "button";
+    addBtn.addEventListener("click", async () => {
+      if (!idIn.value.trim() || !baseIn.value.trim()) { toast(T("settings.invalid")); return; }
+      try {
+        const rr = await fetch("/api/settings/provider", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: idIn.value.trim(),
+            base: baseIn.value.trim(),
+            key: keyIn.value.trim(),
+            models: modelsIn.value
+          })
+        });
+        const jj = await rr.json();
+        if (!jj.success) throw new Error(jj.error || T("settings.invalid"));
+        toast(T("settings.saved"));
+        resetAfterSettings();
+      } catch (e) {
+        toast(T("settings.saveFailed") + e.message);
+      }
+    });
+    addForm.appendChild(idIn);
+    addForm.appendChild(baseIn);
+    addForm.appendChild(keyIn);
+    addForm.appendChild(modelsIn);
+    addForm.appendChild(addBtn);
+    addSec.appendChild(addForm);
+    addSec.appendChild(el("p", "muted", T("settings.keyHint") + " " + T("settings.modelsHint")));
+    wrap.appendChild(addSec);
+
+    // ---- import from JSON ----
+    const impSec = el("section", "settings-section");
+    impSec.appendChild(el("h4", "", T("settings.importTitle")));
+    impSec.appendChild(el("p", "muted", T("settings.importHint")));
+    const ta = document.createElement("textarea");
+    ta.placeholder = '{ "provider": { "deepseek": { "options": { "baseURL": "…", "apiKey": "…" }, "models": ["deepseek-flash"] } } }';
+    ta.style.cssText = "width:100%;min-height:140px;margin:8px 0;font-family:var(--font-mono);font-size:12.5px;line-height:1.6;background:var(--surface);border:1px solid var(--line-strong);border-radius:10px;padding:10px 12px;color:var(--ink);resize:vertical";
+    const fileIn = document.createElement("input");
+    fileIn.type = "file";
+    fileIn.accept = ".json,application/json";
+    fileIn.style.fontSize = "13px";
+    fileIn.addEventListener("change", async () => {
+      const f = fileIn.files && fileIn.files[0];
+      if (f) ta.value = await f.text();
+    });
+    const impBtn = el("button", "btn small", T("settings.importBtn"));
+    impBtn.type = "button";
+    impBtn.addEventListener("click", async () => {
+      try {
+        const rr = await fetch("/api/settings/import", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ json: ta.value })
+        });
+        const jj = await rr.json();
+        if (!jj.success) throw new Error(jj.error || T("settings.importFailed"));
+        toast(T("settings.importOk", { n: jj.count || 0 }));
+        resetAfterSettings();
+      } catch (e) {
+        toast(T("settings.importFailed") + e.message);
+      }
+    });
+    const impRow = el("div", "composer-row");
+    impRow.appendChild(fileIn);
+    impRow.appendChild(impBtn);
+    impSec.appendChild(ta);
+    impSec.appendChild(impRow);
+    wrap.appendChild(impSec);
+
+    openModal(T("settings.title"), wrap, []);
+  }
+
+  async function resetAfterSettings() {
+    await loadModels();
+    await loadZims();
+    await loadSession(branchId);
+    openSettings();
+  }
+
+  $("btn-settings").addEventListener("click", openSettings);
+
+  // ---------------- language ----------------
+  langSel.addEventListener("change", () => {
+    CLAPi18n.setLang(langSel.value);
+  });
+  CLAPi18n.onChange(() => {
+    langSel.value = CLAPi18n.lang;
+    syncModeLine();
+    loadModels().then(() => loadSession(branchId));
+    loadZims();
+  });
+
+  syncModeLine();
   loadModels().then(() => Promise.all([loadSession(), loadZims()]));
 })();
 </script>

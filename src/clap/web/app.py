@@ -43,6 +43,7 @@ from flask import Flask, Response, jsonify, render_template, request
 
 from clap.core import export as EXP
 from clap.core import grounded as GR
+from clap.core import markdown_render as MD
 from clap.core import providers as PR
 from clap.core import renew as RN
 from clap.core import session as SM
@@ -57,8 +58,92 @@ app = Flask(__name__)
 app.jinja_loader.searchpath.append(str(Path(__file__).parent / "static"))
 kb = KnowledgeBase()
 
-DEFAULT_PROVIDER = "ollama-cloud"
+DEFAULT_PROVIDER = "deepseek"
 GROUNDED_TOP_K = 6
+
+# Preferred default model per provider (used when the provider is configured
+# but no explicit choice was saved in settings).
+PREFERRED_MODELS = {"deepseek": "deepseek-flash"}
+
+
+def _text(lang: str, zh: str, en: str) -> str:
+    """Pick a message language (kept for simple two-way messages)."""
+    return en if str(lang or "").lower().startswith("en") else zh
+
+
+# Server-side user-facing messages, all ten interface languages. Missing
+# entries fall back to English, then Chinese.
+UI_TEXT = {
+    "empty_message": {
+        "zh": "消息为空", "en": "Message is empty", "ja": "メッセージが空です",
+        "fr": "Le message est vide", "ru": "Сообщение пустое", "de": "Die Nachricht ist leer",
+        "es": "El mensaje está vacío", "pt": "A mensagem está vazia", "it": "Il messaggio è vuoto",
+        "ko": "메시지가 비어 있습니다",
+    },
+    "unknown_mode": {
+        "zh": "未知的对话模式", "en": "Unknown chat mode", "ja": "不明なチャットモード",
+        "fr": "Mode de discussion inconnu", "ru": "Неизвестный режим чата",
+        "de": "Unbekannter Chat-Modus", "es": "Modo de chat desconocido",
+        "pt": "Modo de conversa desconhecido", "it": "Modalità di chat sconosciuta",
+        "ko": "알 수 없는 채팅 모드",
+    },
+    "bad_message_id": {
+        "zh": "message_id 必须指向这条分支上的提问消息",
+        "en": "message_id must point to a user message on this branch",
+        "ja": "message_id はこのブランチ上のユーザーメッセージを指す必要があります",
+        "fr": "message_id doit désigner un message utilisateur de cette branche",
+        "ru": "message_id должен указывать на сообщение пользователя в этой ветке",
+        "de": "message_id muss auf eine Benutzernachricht in diesem Zweig zeigen",
+        "es": "message_id debe apuntar a un mensaje del usuario en esta rama",
+        "pt": "message_id deve apontar para uma mensagem do utilizador neste ramo",
+        "it": "message_id deve indicare un messaggio utente in questo ramo",
+        "ko": "message_id는 이 분기의 사용자 메시지를 가리켜야 합니다",
+    },
+    "provider_missing": {
+        "zh": "服务商「{pid}」还没有配置（环境变量或配置文件里找不到它的凭证）",
+        "en": 'Provider "{pid}" is not configured (no credentials in the environment or config files)',
+        "ja": "プロバイダー「{pid}」が未設定です（環境変数や設定ファイルに認証情報がありません）",
+        "fr": "Le fournisseur « {pid} » n'est pas configuré (aucun identifiant dans l'environnement ou les fichiers de configuration)",
+        "ru": "Провайдер «{pid}» не настроен (нет учётных данных в окружении или файлах конфигурации)",
+        "de": "Anbieter „{pid}“ ist nicht konfiguriert (keine Zugangsdaten in Umgebung oder Konfigurationsdateien)",
+        "es": "El proveedor «{pid}» no está configurado (no hay credenciales en el entorno ni en los archivos de configuración)",
+        "pt": "O fornecedor «{pid}» não está configurado (sem credenciais no ambiente ou nos ficheiros de configuração)",
+        "it": "Il fornitore «{pid}» non è configurato (nessuna credenziale nell'ambiente o nei file di configurazione)",
+        "ko": '공급자 "{pid}"이(가) 구성되지 않았습니다 (환경 변수나 설정 파일에 자격 증명 없음)',
+    },
+    "no_model": {
+        "zh": "服务商「{pid}」没有可用的模型",
+        "en": 'Provider "{pid}" has no available model',
+        "ja": "プロバイダー「{pid}」に利用可能なモデルがありません",
+        "fr": "Le fournisseur « {pid} » n'a aucun modèle disponible",
+        "ru": "У провайдера «{pid}» нет доступных моделей",
+        "de": "Anbieter „{pid}“ hat kein verfügbares Modell",
+        "es": "El proveedor «{pid}» no tiene modelos disponibles",
+        "pt": "O fornecedor «{pid}» não tem modelos disponíveis",
+        "it": "Il fornitore «{pid}» non ha modelli disponibili",
+        "ko": '공급자 "{pid}"에 사용 가능한 모델이 없습니다',
+    },
+    "abstain": {
+        "zh": "来源未提及（检索没有找到可用的材料，换个关键词或指定资料库）。",
+        "en": "The material does not mention this (the search found nothing; try other keywords or choose a specific library).",
+        "ja": "資料には言及されていません（検索で材料が見つかりませんでした。別のキーワードかライブラリを指定してください）。",
+        "fr": "Le document n'en parle pas (la recherche n'a rien trouvé ; essayez d'autres mots-clés ou une autre bibliothèque).",
+        "ru": "В материале это не упоминается (поиск ничего не нашёл; попробуйте другие ключевые слова или библиотеку).",
+        "de": "Das Material erwähnt das nicht (die Suche fand nichts; andere Suchbegriffe oder eine bestimmte Bibliothek wählen).",
+        "es": "El material no lo menciona (la búsqueda no encontró nada; prueba otras palabras o una biblioteca concreta).",
+        "pt": "O material não menciona isto (a pesquisa não encontrou nada; tente outras palavras ou uma biblioteca específica).",
+        "it": "Il materiale non lo menziona (la ricerca non ha trovato nulla; prova altre parole o una libreria specifica).",
+        "ko": "자료에 언급되지 않았습니다 (검색에서 자료를 찾지 못했습니다. 다른 키워드나 특정 라이브러리를 지정하세요).",
+    },
+}
+
+
+def _msg(lang: str, key: str, **vars) -> str:
+    """Localized server message (10 languages, English/Chinese fallback)."""
+    tag = (str(lang or "").split("-")[0].lower()) or "zh"
+    table = UI_TEXT.get(key, {})
+    text = table.get(tag) or table.get("en") or table.get("zh") or key
+    return text.format(**vars) if vars else text
 
 # --------------------------------------------------------------------------
 # provider registry (cached: availability probes are network calls)
@@ -85,12 +170,29 @@ def reset_registry_cache() -> None:
 
 
 def default_selection(registry: dict) -> dict:
-    """Default provider/model, resolved from live availability (no guessing)."""
-    pid = DEFAULT_PROVIDER if DEFAULT_PROVIDER in registry else ""
+    """Default provider/model: saved settings → deepseek-flash → live first."""
+    from clap.core import settings_store
+
+    pref = settings_store.load().get("default") or {}
+    pid = pref.get("provider") if pref.get("provider") in registry else ""
+    if not pid:
+        pid = DEFAULT_PROVIDER if DEFAULT_PROVIDER in registry else ""
     if not pid:
         preferred = [p for p in sorted(registry) if p in ("deepseek", "ollama-cloud", "huggingface")]
         pid = preferred[0] if preferred else (sorted(registry)[0] if registry else "")
-    model = PR.default_model_for(registry, pid) if pid else ""
+    if not pid:
+        return {"provider": "", "model": ""}
+
+    prov = registry.get(pid)
+    live = prov.list_models() if prov is not None else []
+    wanted = pref.get("model") if pref.get("provider") == pid else ""
+    model = ""
+    if wanted and (not live or wanted in live):
+        model = wanted
+    elif pid in PREFERRED_MODELS and (not live or PREFERRED_MODELS[pid] in live):
+        model = PREFERRED_MODELS[pid]
+    else:
+        model = PR.default_model_for(registry, pid)
     return {"provider": pid, "model": model}
 
 
@@ -271,27 +373,88 @@ def api_chat():
     """Streaming chat through the provider layer (SSE).
 
     Body: {message, provider?, model?, branch?, lane?, grounded?, zims?,
-           top_k?, renew_summary?}
+           top_k?, renew_summary?, mode?, message_id?, lang?}
+
+    mode:
+      "send"        normal new question (default)
+      "regenerate"  re-answer the user message `message_id`: its replies are
+                    dropped and generated again on the same branch
+      "edit"        replace the user message `message_id` with `message`,
+                    drop its replies, then answer
     """
     data = request.get_json(silent=True) or {}
+    lang = (data.get("lang") or "").strip()
+    mode = (data.get("mode") or "send").strip()
     msg = (data.get("message") or "").strip()
-    if not msg:
-        return jsonify({"success": False, "error": "消息为空"}), 400
+    if mode not in ("send", "regenerate", "edit"):
+        return jsonify({"success": False, "error": _msg(lang, "unknown_mode")}), 400
+    if mode != "regenerate" and not msg:
+        return jsonify({"success": False, "error": _msg(lang, "empty_message")}), 400
 
     registry = get_registry()
     pid = data.get("provider") or default_selection(registry)["provider"]
     if pid not in registry:
         return (
-            jsonify({"success": False, "error": f"provider「{pid}」未配置（环境变量或配置文件里没有它的凭证）"}),
+            jsonify(
+                {
+                    "success": False,
+                    "error": _msg(lang, "provider_missing", pid=pid),
+                }
+            ),
             400,
         )
 
     model = (data.get("model") or "").strip() or PR.default_model_for(registry, pid)
     if not model:
-        return jsonify({"success": False, "error": f"provider「{pid}」没有可用模型"}), 400
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": _msg(lang, "no_model", pid=pid),
+                }
+            ),
+            400,
+        )
 
     s = current_session()
     branch = _tools_branch_id(s) if data.get("lane") == "tools" else _branch_id(s, data.get("branch"))
+
+    # ---- regenerate / edit: redo the last answer in place ------------------
+    if mode in ("regenerate", "edit"):
+        target_id = (data.get("message_id") or "").strip()
+        target = SM.message(s, target_id) if target_id else None
+        if target is None or target.get("role") != "user":
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": _msg(lang, "bad_message_id"),
+                    }
+                ),
+                400,
+            )
+        with _session_lock:
+            try:
+                removed = SM.delete_replies_after(s, branch, target_id)
+            except SM.SessionError as e:
+                return jsonify({"success": False, "error": _scrub(str(e), registry)}), 400
+            if mode == "edit":
+                old_text = target.get("content") or ""
+                target["content"] = msg
+                target["edited_from"] = old_text[:500]
+                target["ts"] = SM.now_ms()
+            else:
+                msg = target.get("content") or ""
+            SM._add_history(
+                s,
+                "edit" if mode == "edit" else "regenerate",
+                {
+                    "branch": branch,
+                    "message": target_id,
+                    "removed": removed,
+                    "text": msg[:200],
+                },
+            )
 
     # ---- grounded mode: retrieve BEFORE answering -------------------------
     grounded = bool(data.get("grounded"))
@@ -310,12 +473,13 @@ def api_chat():
     renew_summary = (data.get("renew_summary") or "").strip()
 
     with _session_lock:
-        path = SM.branch_path(s, branch)
-        parent = path[-1]["id"] if path else None
-        SM.append_message(
-            s, "user", msg, parent=parent, branch_id=branch, model=model, provider=pid,
-            grounded=grounded, zims=list(data.get("zims") or []) if grounded else None,
-        )
+        if mode == "send":
+            path = SM.branch_path(s, branch)
+            parent = path[-1]["id"] if path else None
+            SM.append_message(
+                s, "user", msg, parent=parent, branch_id=branch, model=model, provider=pid,
+                grounded=grounded, zims=list(data.get("zims") or []) if grounded else None,
+            )
         convo = _convo(s, branch)
 
     if renew_summary:
@@ -349,7 +513,9 @@ def api_chat():
 
         abstained = grounded and not sources and not data.get("allow_ungrounded")
         if abstained:
-            parts.append("来源未提及（检索未命中任何材料，请换关键词或指定 ZIM 库）。")
+            parts.append(
+                _msg(lang, "abstain")
+            )
             yield f"data: {json.dumps({'delta': parts[-1]}, ensure_ascii=False)}\n\n"
         else:
             try:
@@ -420,8 +586,156 @@ def api_chat_stop():
 
 
 # --------------------------------------------------------------------------
+# settings: provider credentials and the default model
+# --------------------------------------------------------------------------
+
+
+@app.route("/api/settings", methods=["GET"])
+def api_settings_get():
+    """Provider configuration + default model (keys masked, never returned)."""
+    from clap.core import settings_store as SS
+
+    registry = get_registry()
+    saved = SS.load()
+    probe = PR.load_probe_list()
+    rows = []
+    for pid in sorted(set(saved["providers"]) | set(registry) | set(probe["providers"])):
+        prov = registry.get(pid)
+        saved_row = saved["providers"].get(pid) or {}
+        models = (prov.list_models() if prov else []) or saved_row.get("models") or probe["models"].get(pid, [])
+        rows.append(
+            {
+                "id": pid,
+                "base": prov.base if prov else (saved_row.get("base") or probe["providers"].get(pid, "")),
+                "masked": prov.masked_key() if prov else SS.masked(saved_row.get("apiKey", "")),
+                "configured": prov is not None,
+                "source": "settings" if saved_row else ("discovered" if prov else "inventory"),
+                "available": prov.is_available() if prov else False,
+                "models": models,
+                "models_manual": list(saved_row.get("models") or []),
+            }
+        )
+    return jsonify({"success": True, "default": default_selection(registry), "providers": rows})
+
+
+@app.route("/api/settings/provider", methods=["POST"])
+def api_settings_provider():
+    """Save a provider endpoint/key/models. Missing key → keep the stored one."""
+    from clap.core import settings_store as SS
+
+    body = request.get_json(silent=True) or {}
+    pid = (body.get("id") or "").strip()
+    base = (body.get("base") or "").strip()
+    key = body.get("key")
+    if key is not None and not str(key).strip():
+        key = None  # empty field means "do not change"
+    models = body.get("models")
+    if isinstance(models, str):
+        models = [m.strip() for m in models.replace("，", ",").split(",") if m.strip()]
+    elif not isinstance(models, list):
+        models = None
+    try:
+        SS.set_provider(pid, base=base, api_key=key, name=(body.get("name") or "").strip(), models=models)
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    reset_registry_cache()
+    row = SS.load()["providers"].get(pid, {})
+    return jsonify(
+        {
+            "success": True,
+            "provider": {
+                "id": pid,
+                "base": row.get("base", ""),
+                "masked": SS.masked(row.get("apiKey", "")),
+                "models": row.get("models", []),
+            },
+        }
+    )
+
+
+@app.route("/api/settings/import", methods=["POST"])
+def api_settings_import():
+    """Import providers from a pasted/uploaded JSON document (keys stay local)."""
+    from clap.core import settings_store as SS
+
+    body = request.get_json(silent=True) or {}
+    text = body.get("json") or ""
+    if not text.strip():
+        return jsonify({"success": False, "error": "JSON 为空"}), 400
+    try:
+        result = SS.import_json(text)
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    reset_registry_cache()
+    return jsonify(
+        {
+            "success": True,
+            "imported": result["imported"],
+            "skipped": result["skipped"],
+            "count": len(result["imported"]),
+        }
+    )
+
+
+@app.route("/api/settings/provider/<provider_id>", methods=["DELETE"])
+def api_settings_provider_delete(provider_id):
+    from clap.core import settings_store as SS
+
+    SS.remove_provider(provider_id)
+    reset_registry_cache()
+    return jsonify({"success": True, "id": provider_id})
+
+
+@app.route("/api/settings/default", methods=["POST"])
+def api_settings_default():
+    from clap.core import settings_store as SS
+
+    body = request.get_json(silent=True) or {}
+    try:
+        SS.set_default((body.get("provider") or "").strip(), (body.get("model") or "").strip())
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    reset_registry_cache()
+    return jsonify({"success": True, "default": SS.load().get("default")})
+
+
+@app.route("/api/settings/test", methods=["POST"])
+def api_settings_test():
+    body = request.get_json(silent=True) or {}
+    pid = (body.get("id") or "").strip()
+    prov = get_registry().get(pid)
+    if prov is None:
+        return jsonify({"success": False, "error": _msg(body.get("lang", ""), "provider_missing", pid=pid)}), 400
+    return jsonify(
+        {
+            "success": True,
+            "id": pid,
+            "available": prov.is_available(),
+            "models": prov.list_models()[:30],
+            "masked": prov.masked_key(),
+            "base": prov.base,
+        }
+    )
+
+
+# --------------------------------------------------------------------------
 # session endpoints
 # --------------------------------------------------------------------------
+
+
+def _message_view(m: dict) -> dict:
+    """Session message + rendered HTML (math/code/citations) for the UI."""
+    view = dict(m)
+    content = m.get("content") or ""
+    try:
+        view["html"] = (
+            MD.render_markdown(content, citations=(m.get("role") == "assistant"))
+            if m.get("role") == "assistant"
+            else MD.render_plain(content)
+        )
+    except Exception:
+        view["html"] = MD.render_plain(content)
+    return view
 
 
 @app.route("/api/session/get")
@@ -434,7 +748,7 @@ def api_session_get():
             "session_id": s["manifest"]["session_id"],
             "purpose": s["manifest"].get("purpose", ""),
             "branch_id": b,
-            "messages": SM.branch_full_path(s, b),
+            "messages": [_message_view(m) for m in SM.branch_full_path(s, b)],
             "branches": [
                 {
                     "id": x.get("id"),
@@ -446,7 +760,11 @@ def api_session_get():
                 for x in s.get("branches", [])
             ],
             "annotations": s.get("annotations", []),
-            "history": [h for h in s["manifest"].get("history", []) if h.get("event") in ("privacy_note", "renewal")][-8:],
+            "history": [
+                h
+                for h in s["manifest"].get("history", [])
+                if h.get("event") in ("privacy_note", "renewal", "edit", "regenerate")
+            ][-10:],
         }
     )
 
@@ -648,6 +966,7 @@ def api_zim_search():
 def api_zim_article():
     zim = request.args.get("zim", "")
     path = request.args.get("path", "")
+    q = request.args.get("q", "")
     if not zim or not path:
         return jsonify({"success": False, "error": "zim 与 path 必填"}), 400
     try:
@@ -656,7 +975,20 @@ def api_zim_article():
         return jsonify({"success": False, "error": str(e)}), 404
     except Exception as e:
         return jsonify({"success": False, "error": _scrub(f"{type(e).__name__}: {e}", get_registry())}), 500
-    return jsonify({"success": True, **art})
+    match = zim_kb.locate_passage(art["text"], q) if q else None
+    return jsonify({"success": True, "match": match, **art})
+
+
+@app.route("/api/render", methods=["POST"])
+def api_render():
+    """Render Markdown + math + code to self-contained HTML."""
+    body = request.get_json(silent=True) or {}
+    text = body.get("text") or ""
+    try:
+        rendered = MD.render_markdown(text, citations=bool(body.get("citations", True)))
+    except Exception as e:
+        return jsonify({"success": False, "error": _scrub(f"{type(e).__name__}: {e}", get_registry())}), 500
+    return jsonify({"success": True, "html": rendered})
 
 
 @app.route("/api/zim/suggest", methods=["POST"])
@@ -682,18 +1014,20 @@ def timeline_page():
         return (
             render_template(
                 "timeline.html",
-                error="缺少 file 参数。示例：/timeline?file=/path/to/session.clap",
+                error_key="timeline.paramMissing",
+                error=None,
                 html_body="",
                 file_param="",
-                title="时间轴视图",
+                title="Timeline",
             ),
             400,
         )
     try:
         s = SM.load_session(file_path)
-        body = TL.render_timeline_html(s, title="CLAP 时间轴")
+        body = TL.render_timeline_html(s, title="CLAP Timeline")
         return render_template(
             "timeline.html",
+            error_key=None,
             error=None,
             html_body=body,
             file_param=file_path,
@@ -703,10 +1037,11 @@ def timeline_page():
         return (
             render_template(
                 "timeline.html",
-                error=_scrub(f"无法渲染：{type(e).__name__}: {e}", get_registry()),
+                error_key=None,
+                error=_scrub(f"{type(e).__name__}: {e}", get_registry()),
                 html_body="",
                 file_param=file_path,
-                title="时间轴视图",
+                title="Timeline",
             ),
             404,
         )

@@ -86,6 +86,7 @@ class ZimHit:
     title: str
     snippet: str = ""
     score: float = 1.0
+    tf: float = 0.0
     estimated: int = 0
     text: str = field(default="", repr=False)
 
@@ -110,6 +111,7 @@ class ZimLibrary:
         self._lock = threading.RLock()
         self._archives: OrderedDict[str, object] = OrderedDict()
         self._infos: dict[str, ZimInfo] | None = None
+        self._text_cache: OrderedDict[tuple[str, str], str] = OrderedDict()
 
     @property
     def roots(self) -> list[str]:
@@ -201,38 +203,87 @@ class ZimLibrary:
             return []
 
         merged: dict[tuple[str, str], ZimHit] = {}
-        for candidate in _query_candidates(query):
+        candidates = _query_candidates(query)
+        for candidate in candidates:
             got = self._search_one(candidate, infos, max(top_k, 5))
+            # longer terms are more specific: “薛定谔方程” should outrank “公式”
+            weight = max(1.0, len(candidate) / 2.0) ** 2.0
             for h in got:
                 key = (h.zim, h.path)
                 if key in merged:
-                    merged[key].score += h.score
+                    merged[key].score += h.score * weight
                 else:
+                    h.score *= weight
                     merged[key] = h
             if got and candidate == _normalise(query):
                 break  # the full phrase hit: no need for the fallbacks
-            if len(merged) >= top_k * 2:
-                break
+        if not merged:
+            # Questions built from long phrases can miss the index entirely;
+            # distinctive character bigrams still find the right chapter.
+            for term in _bigram_fallback(query):
+                for h in self._search_one(term, infos, 3):
+                    key = (h.zim, h.path)
+                    if key in merged:
+                        merged[key].score += h.score * 0.5
+                    else:
+                        h.score *= 0.5
+                        merged[key] = h
+                if len(merged) >= top_k:
+                    break
 
         hits = sorted(merged.values(), key=lambda h: h.score, reverse=True)
+        # re-rank by how often the question's content words actually appear in
+        # each article (an index estimate counts a hit once; a real chapter
+        # repeats its key term many times)
+        terms = [
+            t
+            for c in candidates
+            for t in c.split()
+            if len(t) >= 2 and not any(ch in t for ch in "\\{}$^_=<>")
+        ]
+        uniq_terms = list(dict.fromkeys(terms))
+        for h in hits[:20]:
+            text = self._text(h.zim, h.path).lower()
+            tf = 0.0
+            for term in uniq_terms:
+                count = text.count(term.lower())
+                if count:
+                    tf += count * max(1.0, len(term) / 2.0) ** 2
+            h.tf = tf
+        hits.sort(key=lambda h: (getattr(h, "tf", 0.0), h.score), reverse=True)
+
         ql = _normalise(query).lower()
         for h in hits:
             if ql and ql in h.title.lower():
                 h.score += 50.0
-        hits.sort(key=lambda h: h.score, reverse=True)
+        hits.sort(key=lambda h: (getattr(h, "tf", 0.0), h.score), reverse=True)
 
         out: list[ZimHit] = []
         for h in hits:
             try:
-                text = self.article(h.zim, h.path, max_chars=MAX_ARTICLE_CHARS)["text"]
+                text = self._text(h.zim, h.path)
                 h.snippet = _snippet(text, query)
-                h.text = text
+                h.text = text[:MAX_ARTICLE_CHARS]
             except Exception:
                 h.snippet = ""
             out.append(h)
             if len(out) >= top_k:
                 break
         return out
+
+    def _text(self, zim_name: str, entry_path: str) -> str:
+        """Article text with a small LRU cache (search + snippets + reader)."""
+        key = (zim_name, entry_path)
+        with self._lock:
+            if key in self._text_cache:
+                self._text_cache.move_to_end(key)
+                return self._text_cache[key]
+        text = self.article(zim_name, entry_path)["text"]
+        with self._lock:
+            self._text_cache[key] = text
+            while len(self._text_cache) > 64:
+                self._text_cache.popitem(last=False)
+        return text
 
     def _search_one(self, query: str, infos: list[ZimInfo], per_archive: int) -> list[ZimHit]:
         from libzim.search import Query, Searcher
@@ -346,8 +397,11 @@ _PUNCT_QUERY_RE = re.compile(r"[？?！!。，,；;：:、（）()\[\]【】《�
 _QUERY_STOPWORDS = (
     "研究", "什么", "关系", "如何", "怎样", "为什么", "请问", "介绍", "一下", "以及",
     "它们", "我们", "你们", "他们", "这个", "那个", "哪些", "是否", "可以", "能够",
+    "说明", "写出", "列出", "给出", "计算", "解释", "描述", "总结", "概括", "举例",
+    "比较", "分析", "回答", "帮我", "看看", "用于", "使用", "基于", "关于",
+    "代表", "表示", "意味", "一个", "一些", "这个", "那个", "并", "给", "用", "写",
     "是", "的", "了", "和", "与", "它", "这", "那", "在", "有", "吗", "呢", "吧",
-    "我", "你", "他", "她", "请", "讲", "说", "问", "关于",
+    "我", "你", "他", "她", "请", "讲", "说", "问", "短", "长",
 )
 _STOP_RE = re.compile("|".join(sorted((re.escape(w) for w in _QUERY_STOPWORDS), key=len, reverse=True)))
 
@@ -383,6 +437,29 @@ def _query_candidates(query: str) -> list[str]:
     return candidates
 
 
+def _bigram_fallback(query: str, limit: int = 6) -> list[str]:
+    """Last-resort terms for questions whose phrases match nothing.
+
+    Chinese archives are indexed in character n-grams, so a distinctive
+    bigram («方程» from «薛定谔方程») still finds the right chapter.
+    """
+    base = _normalise(query)
+    out: list[str] = []
+    for run in re.findall(r"[\u4e00-\u9fff]{3,}", base):
+        for i in range(len(run) - 1):
+            gram = run[i : i + 2]
+            if gram in _STOPWORD_BIGRAMS or gram in out:
+                continue
+            out.append(gram)
+            if len(out) >= limit * 2:
+                break
+    # prefer longer words first (already ordered by position); cap the fan-out
+    return out[:limit]
+
+
+_STOPWORD_BIGRAMS = {"什么", "怎么", "为什", "一个", "可以", "我们", "你们", "这个", "那个", "以及", "是否", "能够"}
+
+
 def _snippet(text: str, query: str, radius: int = 80) -> str:
     """Context window around the first query term occurrence."""
     if not text:
@@ -401,6 +478,82 @@ def _snippet(text: str, query: str, radius: int = 80) -> str:
     start = max(0, pos - radius)
     end = min(len(text), pos + radius)
     return ("…" if start else "") + text[start:end].replace("\n", " ") + ("…" if end < len(text) else "")
+
+
+def locate_passage(text: str, query: str, max_span: int = 1400) -> dict | None:
+    """Find the paragraph of `text` that best matches `query`.
+
+    Used by the citation panel: clicking a source opens the original article
+    at the passage that actually talks about the cited claim, instead of
+    dumping the reader at the top of a 10k-character chapter.
+    """
+    text = text or ""
+    query = (query or "").strip()
+    if not text or not query:
+        return None
+
+    terms: list[str] = []
+    for cand in _query_candidates(query):
+        for token in cand.split():
+            token = token.strip()
+            if len(token) < 2 or token in terms:
+                continue
+            # skip TeX / code-like fragments: they never appear in prose
+            if any(ch in token for ch in "\\{}$^_=<>"):
+                continue
+            terms.append(token)
+    if not terms:
+        return None
+
+    # paragraphs = blank-line separated blocks (fallback: the whole text)
+    spans: list[tuple[int, int]] = []
+    pos = 0
+    for m in re.finditer(r"\n\s*\n", text):
+        if m.start() > pos:
+            spans.append((pos, m.start()))
+        pos = m.end()
+    if pos < len(text):
+        spans.append((pos, len(text)))
+    if not spans:
+        spans = [(0, len(text))]
+
+    low = text.lower()
+    best: tuple[float, int, int] | None = None
+    for start, end in spans:
+        block = low[start:end]
+        score = 0.0
+        for term in terms:
+            hits = block.count(term.lower())
+            if hits:
+                score += hits * min(len(term), 6)
+        if score and (best is None or score > best[0]):
+            best = (score, start, end)
+
+    if best is None:
+        first = -1
+        for term in sorted(terms, key=len, reverse=True):
+            first = low.find(term.lower())
+            if first >= 0:
+                break
+        if first < 0:
+            return None
+        start = max(0, first - 200)
+        end = min(len(text), first + 600)
+        return {"start": start, "end": end}
+
+    _, start, end = best
+    if end - start > max_span:
+        # trim long paragraphs around the best-matching term
+        block = low[start:end]
+        centre = start
+        for term in sorted(terms, key=len, reverse=True):
+            idx = block.find(term.lower())
+            if idx >= 0:
+                centre = start + idx
+                break
+        start = max(start, centre - max_span // 3)
+        end = min(end, start + max_span)
+    return {"start": start, "end": end}
 
 
 _LIBRARY: ZimLibrary | None = None
