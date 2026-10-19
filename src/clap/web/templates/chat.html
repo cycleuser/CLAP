@@ -58,6 +58,7 @@
       <button class="btn ghost small" id="btn-share" type="button" data-i18n="chat.share">分享</button>
       <button class="btn ghost small" id="btn-renew" type="button" data-i18n="chat.renew">续期</button>
       <button class="btn ghost small" id="btn-new" type="button" data-i18n="chat.new">新会话</button>
+      <button class="btn ghost small" id="btn-clear" type="button" data-i18n="chat.clear">清空对话</button>
     </div>
     <span class="spacer"></span>
     <span class="status" id="status" data-i18n="chat.status.ready">就绪</span>
@@ -463,6 +464,13 @@
       head.appendChild(forkBtn);
     }
     if (m.edited_from) head.appendChild(el("span", "paused-tag", T("chat.editedTag")));
+    if (m.id) {
+      const delBtn = el("button", "src-btn", T("msg.delete"));
+      delBtn.type = "button";
+      delBtn.title = T("msg.deleteTitle");
+      delBtn.addEventListener("click", () => askDelete(m));
+      head.appendChild(delBtn);
+    }
     if (m.id && role === "user") {
       const editBtn = el("button", "src-btn", T("chat.edit"));
       editBtn.type = "button";
@@ -811,6 +819,51 @@
     await loadSession();
     setStatus(T("chat.newDone"));
   });
+
+  $("btn-clear").addEventListener("click", async () => {
+    if (!confirm(T("chat.clearConfirm"))) return;
+    try {
+      const r = await fetch("/api/session/clear", { method: "POST" });
+      const j = await r.json();
+      if (!j.success) throw new Error(j.error || "");
+      renewSummary = "";
+      await loadSession();
+      setStatus(T("chat.cleared"));
+    } catch (e) {
+      setStatus(T("chat.clearFailed") + e.message, true);
+    }
+  });
+
+  function askDelete(m) {
+    const wrap = el("div", "");
+    wrap.appendChild(el("p", "", T("msg.deleteAsk")));
+    const cancel = el("button", "btn ghost small", T("common.cancel"));
+    cancel.type = "button";
+    cancel.addEventListener("click", closeModal);
+    const one = el("button", "btn ghost small", T("msg.deleteOne"));
+    one.type = "button";
+    one.addEventListener("click", () => doDelete(m, false));
+    const tail = el("button", "btn small", T("msg.deleteCascade"));
+    tail.type = "button";
+    tail.addEventListener("click", () => doDelete(m, true));
+    openModal(T("msg.deleteTitle"), wrap, [cancel, one, tail]);
+  }
+
+  async function doDelete(m, cascade) {
+    try {
+      const r = await fetch("/api/session/delete_message", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: m.id, cascade: cascade, branch: branchId || undefined })
+      });
+      const j = await r.json();
+      if (!j.success) throw new Error(j.error || T("msg.deleteFailed"));
+      closeModal();
+      toast(T("msg.deleted"));
+      await loadSession(branchId);
+    } catch (e) {
+      toast(T("msg.deleteFailed") + e.message);
+    }
+  }
 
   $("btn-export").addEventListener("click", () => {
     const wrap = el("div", "");

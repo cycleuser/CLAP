@@ -125,6 +125,7 @@ def client(fake_base, tmp_path, monkeypatch):
     # never touch the user's real settings file
     monkeypatch.setenv("CLAP_SETTINGS_PATH", str(tmp_path / "settings.json"))
     monkeypatch.setenv("CLAP_TEXT_ROOTS", str(tmp_path / "texts"))
+    monkeypatch.setenv("CLAP_SESSION_PATH", str(tmp_path / "web_session.clap"))
     from clap.core import text_sources as TX
 
     TX.reset_library()
@@ -839,3 +840,54 @@ def test_session_upload_rejects_invalid_file(client):
         content_type="multipart/form-data",
     )
     assert r.status_code == 400
+
+
+# ---------------------------------------------------------------- delete / clear / persistence
+
+
+def test_delete_single_message_reparents_children(client):
+    _chat(client, {"message": "第一问"})
+    _chat(client, {"message": "第二问"})
+    msgs = client.get("/api/session/get").get_json()["messages"]
+    assert len(msgs) == 4
+    target = msgs[1]  # the first answer
+    j = client.post("/api/session/delete_message", json={"id": target["id"]}).get_json()
+    assert j["success"] is True and j["removed"] == [target["id"]]
+    after = client.get("/api/session/get").get_json()["messages"]
+    assert len(after) == 3
+    second_question = [m for m in after if m["content"] == "第二问"][0]
+    assert second_question["parent"] == after[0]["id"]
+
+
+def test_delete_message_and_tail(client):
+    _chat(client, {"message": "第一问"})
+    _chat(client, {"message": "第二问"})
+    msgs = client.get("/api/session/get").get_json()["messages"]
+    target = msgs[2]  # second question
+    j = client.post("/api/session/delete_message", json={"id": target["id"], "cascade": True}).get_json()
+    assert j["success"] is True and len(j["removed"]) == 2
+    after = client.get("/api/session/get").get_json()["messages"]
+    assert [m["content"] for m in after] == ["第一问", "答案"]
+
+
+def test_delete_shared_spine_message_is_refused(client):
+    _chat(client, {"message": "共享问题"})
+    msgs = client.get("/api/session/get").get_json()["messages"]
+    client.post("/api/session/fork", json={"at": msgs[-1]["id"], "name": "分支"})
+    r = client.post("/api/session/delete_message", json={"id": msgs[0]["id"]})
+    assert r.status_code == 400
+
+
+def test_clear_conversation(client):
+    _chat(client, {"message": "会被清空"})
+    j = client.post("/api/session/clear", json={}).get_json()
+    assert j["success"] is True
+    assert client.get("/api/session/get").get_json()["messages"] == []
+
+
+def test_session_survives_process_restart(client):
+    _chat(client, {"message": "持久化测试"})
+    # simulate a server restart: the in-memory session is dropped
+    webapp.set_session(None)
+    msgs = client.get("/api/session/get").get_json()["messages"]
+    assert msgs and msgs[0]["content"] == "持久化测试"

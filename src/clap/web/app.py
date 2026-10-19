@@ -35,6 +35,7 @@ carries masked forms (`***lenNN…tail`) at most; error text is scrubbed.
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 from pathlib import Path
@@ -205,20 +206,60 @@ _session_lock = threading.RLock()
 _current: dict | None = None
 
 
+def _session_path() -> Path:
+    raw = os.environ.get("CLAP_SESSION_PATH", "")
+    return Path(raw).expanduser() if raw else Path.home() / ".clap" / "web_session.clap"
+
+
+def _autosave(s: dict | None) -> None:
+    """Persist the working session so a refresh/restart never loses it."""
+    if not s:
+        return
+    try:
+        p = _session_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        SM.save_session(s, p)
+        try:
+            os.chmod(p, 0o600)
+        except OSError:
+            pass
+    except Exception:
+        pass  # a full disk must not break the conversation
+
+
+def new_current_session() -> dict:
+    """Create a brand-new session (ignores any autosaved one)."""
+    from clap.utils.config import load_config
+
+    cfg = load_config()
+    sel = default_selection(get_registry())
+    s = SM.new_session(
+        chat_model=sel["model"] or cfg.chat_model,
+        provider=sel["provider"] or "",
+        purpose="答疑",
+    )
+    SM.ensure_main_branch(s)
+    set_session(s)
+    return s
+
+
 def current_session() -> dict:
     global _current
     with _session_lock:
         if _current is None:
-            from clap.utils.config import load_config
-
-            cfg = load_config()
-            sel = default_selection(get_registry())
-            _current = SM.new_session(
-                chat_model=sel["model"] or cfg.chat_model,
-                provider=sel["provider"] or "",
-                purpose="答疑",
-            )
-            SM.ensure_main_branch(_current)
+            saved = None
+            p = _session_path()
+            if p.exists():
+                try:
+                    cand = SM.load_session(p)
+                    SM.assert_valid(cand)
+                    saved = cand
+                except Exception:
+                    saved = None
+            if saved is not None:
+                _current = saved
+            else:
+                return new_current_session()
         return _current
 
 
@@ -226,6 +267,8 @@ def set_session(s: dict | None) -> None:
     global _current
     with _session_lock:
         _current = s
+        if s is not None:
+            _autosave(s)
 
 
 def _main_branch_id(s: dict) -> str:
@@ -486,6 +529,7 @@ def api_chat():
                     "text": msg[:200],
                 },
             )
+            _autosave(s)
 
     # ---- grounded mode: retrieve BEFORE answering -------------------------
     grounded = bool(data.get("grounded"))
@@ -597,6 +641,7 @@ def api_chat():
                 audit=meta["audit"],
                 grounded=grounded or None,
             )
+            _autosave(s)
         with _active_lock:
             _active_flags.pop(stream_id, None)
         yield "data: " + json.dumps({"done": True, "meta": meta}, ensure_ascii=False) + "\n\n"
@@ -825,9 +870,32 @@ def api_session_get():
 
 @app.route("/api/session/new", methods=["POST"])
 def api_session_new():
-    set_session(None)
-    s = current_session()
+    s = new_current_session()
     return jsonify({"success": True, "session_id": s["manifest"]["session_id"]})
+
+
+@app.route("/api/session/clear", methods=["POST"])
+def api_session_clear():
+    """One-click clear: start a fresh conversation and forget the autosave."""
+    s = new_current_session()
+    return jsonify({"success": True, "session_id": s["manifest"]["session_id"]})
+
+
+@app.route("/api/session/delete_message", methods=["POST"])
+def api_session_delete_message():
+    """Delete one message (splicing children) or its whole tail."""
+    body = request.get_json(silent=True) or {}
+    mid = (body.get("id") or "").strip()
+    if not mid:
+        return jsonify({"success": False, "error": "id 必填"}), 400
+    s = current_session()
+    branch = _branch_id(s, body.get("branch"))
+    try:
+        removed = SM.delete_message(s, mid, cascade=bool(body.get("cascade")), branch_id=branch)
+    except SM.SessionError as e:
+        return jsonify({"success": False, "error": _scrub(str(e), get_registry())}), 400
+    _autosave(s)
+    return jsonify({"success": True, "removed": removed})
 
 
 @app.route("/api/session/save", methods=["POST"])
@@ -874,6 +942,7 @@ def api_session_fork():
         )
     except Exception as e:
         return jsonify({"success": False, "error": _scrub(str(e), get_registry())}), 400
+    _autosave(s)
     return jsonify({"success": True, "branch": b})
 
 
@@ -939,6 +1008,7 @@ def api_session_renew():
         digest = RN.renewal(s, branch)
     except Exception as e:
         return jsonify({"success": False, "error": _scrub(str(e), get_registry())}), 400
+    _autosave(s)
     return jsonify({"success": True, **digest})
 
 
@@ -964,6 +1034,7 @@ def api_annotate():
         )
     except Exception as e:
         return jsonify({"success": False, "error": _scrub(str(e), get_registry())}), 400
+    _autosave(s)
     return jsonify({"success": True, "annotation": ann, "count": len(s.get("annotations", []))})
 
 

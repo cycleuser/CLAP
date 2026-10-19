@@ -653,6 +653,78 @@ def delete_replies_after(session: dict, branch_id: str, msg_id: str) -> list[str
     return sorted(doomed)
 
 
+def delete_message(session: dict, msg_id: str, cascade: bool = False,
+                   branch_id: str | None = None) -> list[str]:
+    """Delete one message (splicing its children) or a message and its tail.
+
+    `cascade=True` removes the message plus everything after it on its branch
+    (the quick way to trim a conversation). `cascade=False` removes only the
+    node and re-parents its direct children to the node's parent.
+
+    Refuses when the message is shared with another branch (deleting it would
+    break that branch's replay context).
+    """
+    msg = message(session, msg_id)
+    if msg is None:
+        raise SessionError(f"message {msg_id!r} not in session")
+
+    # the branch that owns this message's lineage
+    owner = None
+    candidates = [branch_id] if branch_id else []
+    candidates += [b.get("id") for b in session.get("branches", [])]
+    for bid in candidates:
+        if not bid:
+            continue
+        if msg_id in {m.get("id") for m in branch_path(session, bid)}:
+            owner = bid
+            break
+    if owner is None:
+        raise SessionError(f"message {msg_id!r} is not on any branch lineage")
+
+    # shared with another branch? (spine message used by a fork)
+    for b in session.get("branches", []):
+        if b.get("id") == owner:
+            continue
+        if msg_id in {m.get("id") for m in branch_full_path(session, b.get("id"))}:
+            raise SessionError("这条消息被其他分支共享，不能直接删除")
+
+    if cascade:
+        ids = [m.get("id") for m in branch_path(session, owner)]
+        doomed = set(ids[ids.index(msg_id):])
+        for b in session.get("branches", []):
+            if b.get("id") == owner:
+                continue
+            if b.get("fork_at") in doomed or b.get("root") in doomed:
+                raise SessionError("后面的消息被其他分支引用，不能整段删除")
+        session["messages"] = [m for m in session["messages"] if m.get("id") not in doomed]
+        session["annotations"] = [
+            a for a in session.get("annotations", []) if a.get("target") not in doomed
+        ]
+        b = get_branch(session, owner)
+        if b and b.get("root") in doomed:
+            b["root"] = None
+    else:
+        # a fork point must survive, otherwise that branch loses its context
+        for b in session.get("branches", []):
+            if b.get("fork_at") == msg_id:
+                raise SessionError("有分支从这条消息分叉，不能单条删除")
+        parent = msg.get("parent")
+        children = [m for m in session["messages"] if m.get("parent") == msg_id]
+        for child in children:
+            child["parent"] = parent
+        session["messages"] = [m for m in session["messages"] if m.get("id") != msg_id]
+        session["annotations"] = [
+            a for a in session.get("annotations", []) if a.get("target") != msg_id
+        ]
+        for b in session.get("branches", []):
+            if b.get("root") == msg_id:
+                b["root"] = children[0].get("id") if children else None
+        doomed = {msg_id}
+
+    _add_history(session, "delete", {"branch": owner, "messages": sorted(doomed)})
+    return sorted(doomed)
+
+
 def _ensure_main_root(session: dict) -> str | None:
     b = main_branch(session)
     if session["messages"] and not b.get("root"):

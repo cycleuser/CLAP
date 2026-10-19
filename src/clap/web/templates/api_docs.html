@@ -85,6 +85,10 @@ html:not([lang="zh-CN"]):not([lang="en"]) .note-lang { display: block !important
             <tr><td class="method">GET</td><td><code>/api/session/get?branch=</code></td>
                 <td>当前会话：指定分支的消息（含共同主线）、分支、标注、续期记录。</td></tr>
             <tr><td class="method">POST</td><td><code>/api/session/new</code></td><td>新建空会话。</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/session/clear</code></td><td>一键清空当前对话（新建空会话并覆盖自动保存）。</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/session/delete_message</code></td>
+                <td>删除消息：<code>{"id","cascade"}</code>。<code>cascade=false</code> 只删这一条并把子消息接回上一级；
+                    <code>true</code> 删除这一条及之后。被其他分支共享的消息会拒绝删除。</td></tr>
             <tr><td class="method">POST</td><td><code>/api/session/save</code></td>
                 <td>保存为 v2 <code>.clap</code>。请求体 <code>{"path"}</code>。</td></tr>
             <tr><td class="method">POST</td><td><code>/api/session/load</code></td>
@@ -227,6 +231,9 @@ html:not([lang="zh-CN"]):not([lang="en"]) .note-lang { display: block !important
             <tr><td class="method">GET</td><td><code>/api/session/get?branch=</code></td>
                 <td>Current session: messages of the chosen branch (including the shared main line), branches, annotations and renewals.</td></tr>
             <tr><td class="method">POST</td><td><code>/api/session/new</code></td><td>Start an empty session.</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/session/clear</code></td><td>Clear the current conversation in one click (new empty session, autosave overwritten).</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/session/delete_message</code></td>
+                <td>Delete a message: <code>{"id","cascade"}</code>. <code>cascade=false</code> removes only that node and reattaches its children to the parent; <code>true</code> removes it and everything after. Messages shared with another branch are refused.</td></tr>
             <tr><td class="method">POST</td><td><code>/api/session/save</code></td><td>Save as a v2 <code>.clap</code> file. Body <code>{"path"}</code>.</td></tr>
             <tr><td class="method">POST</td><td><code>/api/session/load</code></td><td>Load a <code>.clap</code> file (v1 files are migrated losslessly). Body <code>{"path"}</code>.</td></tr>
             <tr><td class="method">GET</td><td><code>/api/session/export/download?format=&amp;branch=</code></td>
