@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import time
 from pathlib import Path
@@ -341,9 +342,12 @@ def _merge_evidence(query: str, zim_hits: list, text_hits: list, top_k: int = 6)
     """
     terms: list[str] = []
     candidates = zim_kb._query_candidates(query)
+    base = zim_kb._normalise(query)
     # use the content terms, not the full phrase: the phrase itself almost
     # never appears verbatim in the evidence
-    for cand in (candidates[1:] or candidates):
+    for cand in candidates:
+        if cand == base or " " in cand:
+            continue
         for token in cand.split():
             token = token.strip()
             if len(token) < 2 or token in terms:
@@ -351,16 +355,43 @@ def _merge_evidence(query: str, zim_hits: list, text_hits: list, top_k: int = 6)
             if any(ch in token for ch in "\\{}$^_=<>"):
                 continue
             terms.append(token)
-    min_cov = 2 if len(terms) >= 2 else 1
+    if not terms and base:
+        terms = [base]
+
+    _GENERIC_EN = {
+        "problem", "problems", "solve", "solves", "solution", "describe", "explain",
+        "method", "methods", "approach", "approaches", "paper", "study", "work",
+        "question", "answer", "summary", "result", "results", "main", "using",
+        "based", "large", "language", "model", "models",
+    }
+
+    def _key_term(term: str) -> bool:
+        if re.search(r"[\u4e00-\u9fff]", term):
+            return len(term) >= 3
+        if any(c.isupper() for c in term) or any(ch in term for ch in "-._") or any(c.isdigit() for c in term):
+            return True
+        return len(term) >= 6 and term.lower() not in _GENERIC_EN
+
+    key_terms = [t for t in terms if _key_term(t)]
+    effective_min = 1 if key_terms else (2 if len(terms) >= 2 else 1)
     scored = []
     for hit in list(zim_hits) + list(text_hits):
         body = (getattr(hit, "text", "") or "").lower()
+        title = (getattr(hit, "title", "") or "").lower()
+        if key_terms and not any(t.lower() in body for t in key_terms):
+            continue  # a generic word like "problem" must not admit a document
         coverage = sum(1 for t in terms if t.lower() in body)
-        if coverage < min_cov:
+        if coverage < effective_min:
             continue
-        scored.append((coverage, float(getattr(hit, "score", 0) or 0), hit))
-    scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
-    return [hit for _cov, _score, hit in scored[:top_k]]
+        title_hit = bool(key_terms) and any(t.lower() in title for t in key_terms)
+        scored.append((title_hit, coverage, float(getattr(hit, "score", 0) or 0), hit))
+    # precision first: when some documents actually name the topic in their
+    # title, documents that merely mention it are not shown as sources
+    title_matches = [row for row in scored if row[0]]
+    if title_matches:
+        scored = title_matches
+    scored.sort(key=lambda x: (x[0], x[1], x[2]), reverse=True)
+    return [row[3] for row in scored[:top_k]]
 
 
 @app.route("/api/models")
@@ -553,6 +584,11 @@ def api_chat():
         sources, _ = GR.build_context(hits) if hits else ([], "")
         if sources:
             system_prompt = GR.render_system_prompt(sources)
+            if data.get("concise"):
+                system_prompt += (
+                    "\n7. Keep the answer under 110 words and at most 3 sentences; "
+                    "keep the [n] citations."
+                )
 
     renew_summary = (data.get("renew_summary") or "").strip()
 
@@ -835,6 +871,14 @@ def _message_view(m: dict) -> dict:
     if sources:
         view["sources"] = sources
     return view
+
+
+@app.after_request
+def _no_store_api(resp):
+    """API answers must never be cached (stale sessions/answers after restarts)."""
+    if request.path.startswith("/api/"):
+        resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 @app.route("/api/session/get")
@@ -1349,6 +1393,12 @@ def index():
 @app.route("/kb")
 def kb_page():
     return render_template("kb.html")
+
+
+@app.route("/figure")
+def figure_page():
+    """Square, print-ready answer card (used for article figures)."""
+    return render_template("figure.html")
 
 
 @app.route("/api-docs")

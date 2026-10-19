@@ -215,8 +215,6 @@ class ZimLibrary:
                 else:
                     h.score *= weight
                     merged[key] = h
-            if got and candidate == _normalise(query):
-                break  # the full phrase hit: no need for the fallbacks
         if not merged:
             # Questions built from long phrases can miss the index entirely;
             # distinctive character bigrams still find the right chapter.
@@ -246,7 +244,9 @@ class ZimLibrary:
             text = self._text(h.zim, h.path).lower()
             tf = 0.0
             for term in uniq_terms:
-                count = text.count(term.lower())
+                # cap per-term occurrences: a generic word repeated 100× must
+                # not drown a precise term (Schrödinger vs. equation)
+                count = min(text.count(term.lower()), 8)
                 if count:
                     tf += count * max(1.0, len(term) / 2.0) ** 2
             h.tf = tf
@@ -405,6 +405,20 @@ _QUERY_STOPWORDS = (
 )
 _STOP_RE = re.compile("|".join(sorted((re.escape(w) for w in _QUERY_STOPWORDS), key=len, reverse=True)))
 
+# English function words are dropped at the token level (never as substrings:
+# stripping "in" inside a word would corrupt it).
+_EN_STOP = {
+    "a", "an", "the", "and", "or", "but", "if", "then", "than", "so", "to", "of",
+    "in", "on", "at", "by", "for", "from", "with", "without", "about", "into",
+    "is", "are", "was", "were", "be", "been", "being", "do", "does", "did",
+    "can", "could", "would", "should", "will", "shall", "may", "might", "must",
+    "what", "which", "who", "whom", "whose", "when", "where", "why", "how",
+    "this", "that", "these", "those", "it", "its", "they", "them", "their",
+    "we", "our", "you", "your", "he", "she", "his", "her", "i", "me", "my",
+    "please", "explain", "describe", "tell", "give", "show", "answer",
+    "mean", "means", "meaning",
+}
+
 
 def _normalise(query: str) -> str:
     """Strip punctuation and collapse whitespace (index-safe phrase form)."""
@@ -412,28 +426,34 @@ def _normalise(query: str) -> str:
 
 
 def _query_candidates(query: str) -> list[str]:
-    """Search phrases in priority order: full question, then content terms."""
+    """Search phrases in priority order: a short phrase, then content terms."""
     base = _normalise(query)
     if not base:
         return []
-    candidates = [base]
+    tokens = base.split(" ")
     terms: list[str] = []
-    for token in base.split(" "):
-        cleaned = _STOP_RE.sub(" ", token)
-        for part in cleaned.split():
-            part = part.strip()
-            # CJK runs shorter than 2 chars and Latin words shorter than 2 are noise
-            if len(part) >= 2 and part not in terms:
-                terms.append(part)
-    # a long CJK run keeps its leading np-gram as an extra candidate
-    for token in base.split(" "):
-        if re.fullmatch(r"[\u4e00-\u9fff]{6,}", token):
-            head = _STOP_RE.sub(" ", token).strip().split(" ")[0] if _STOP_RE.sub(" ", token).strip() else ""
-            if len(head) >= 2 and head not in terms:
-                terms.insert(0, head)
-    for t in terms[:4]:
-        if t != base and t not in candidates:
-            candidates.append(t)
+    for token in tokens:
+        # mixed scripts («CAR-Transformerは何を…») must be split: the Latin
+        # model name is the searchable part, the CJK run is not glued to it
+        for latin in re.findall(r"[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-z0-9À-ÖØ-öø-ÿ_.+-]*", token):
+            if latin.lower() not in _EN_STOP and len(latin) >= 2 and latin not in terms:
+                terms.append(latin)
+        for run in re.findall(r"[\u4e00-\u9fff]+", token):
+            cleaned = _STOP_RE.sub(" ", run)
+            for part in cleaned.split():
+                part = part.strip()
+                if len(part) >= 2 and part not in terms:
+                    terms.append(part)
+    # a long natural-language question is not a phrase the index can match;
+    # searching it whole would let common words pull unrelated documents
+    latin_only = all(
+        re.search(r"[^\W\d_]", t, re.UNICODE) and not re.search(r"[\u4e00-\u9fff]", t)
+        for t in tokens
+    )
+    short_phrase = (" " not in base and len(base) <= 24) or (
+        latin_only and len(tokens) <= 3 and len(base) <= 40
+    )
+    candidates = ([base] if short_phrase else []) + terms[:6]
     return candidates
 
 

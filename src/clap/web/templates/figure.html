@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1200, initial-scale=1">
+<title>CLAP · Figure</title>
+<script>{% include "theme.js" %}</script>
+<style>{% include "app.css" %}
+  html, body {
+    width: 1200px; height: 1200px; overflow: hidden;
+    background: #eef2f9; margin: 0;
+  }
+  .figure {
+    width: 1200px; height: 1200px; box-sizing: border-box;
+    padding: 58px 64px 48px;
+    display: flex; flex-direction: column; gap: 20px;
+    background:
+      radial-gradient(900px 420px at 0% -10%, #e8f0ff 0%, rgba(232,240,255,0) 62%),
+      radial-gradient(700px 360px at 100% 0%, #eef7ff 0%, rgba(238,247,255,0) 58%),
+      #ffffff;
+    position: relative;
+  }
+  .figure::before {
+    content: ""; position: absolute; inset: 0 0 auto 0; height: 6px;
+    background: linear-gradient(90deg, #2f6bff, #7aa2ff 60%, #cfe0ff);
+  }
+  .fig-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .fig-brand { display: flex; align-items: center; gap: 10px; font-size: 17px; letter-spacing: .2px; color: #5a6a80; font-weight: 600; }
+  .fig-brand b { color: #0e1626; font-weight: 800; letter-spacing: .4px; font-size: 19px; }
+  .fig-dot { width: 9px; height: 9px; border-radius: 50%; background: #2f6bff; box-shadow: 0 0 0 4px #e6eeff; }
+  .fig-chip {
+    font-size: 15px; color: #2f6bff; background: #eef3ff; border: 1px solid #dbe6ff;
+    border-radius: 999px; padding: 5px 14px; font-weight: 650; max-width: 520px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .fig-label {
+    font-size: 13px; font-weight: 750; letter-spacing: .9px; text-transform: uppercase;
+    color: #7b8aa0; margin-bottom: 6px;
+  }
+  .fig-q h1 {
+    font-size: 34px; line-height: 1.32; font-weight: 760; letter-spacing: -.015em;
+    color: #0e1626; margin: 0;
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .fig-a { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .fig-answer {
+    flex: 1; min-height: 0; overflow: hidden;
+    display: flex; flex-direction: column; justify-content: center;
+  }
+  .fig-answer-inner { width: 100%; font-size: 24px; line-height: 1.58; color: #16202f; }
+  .fig-answer p { margin: 0 0 .55em; }
+  .fig-answer ul, .fig-answer ol { margin: .2em 0 .6em; padding-left: 1.4em; }
+  .fig-answer li { margin: .12em 0; }
+  .fig-answer h1, .fig-answer h2, .fig-answer h3 { font-size: 1.1em; margin: .5em 0 .3em; }
+  .fig-answer .math-block { margin: .45em 0; padding: 2px 0; font-size: 1em; }
+  .fig-answer .cite {
+    font-size: 15px; padding: 0 7px; border-radius: 7px; vertical-align: 2px;
+    background: #eef3ff; border: 1px solid #dbe6ff; color: #2f6bff; font-weight: 750;
+  }
+  .fig-answer .code-block { margin: .5em 0; }
+  .fig-answer .code-block pre { font-size: 16px; line-height: 1.5; }
+  .fig-answer table { font-size: .82em; }
+  .fig-sources { display: flex; flex-direction: column; gap: 7px; }
+  .fig-src {
+    display: flex; gap: 9px; align-items: baseline; font-size: 16px; color: #42526a;
+    background: #f7f9fd; border: 1px solid #e6ebf4; border-radius: 10px; padding: 7px 12px;
+  }
+  .fig-src b { color: #2f6bff; font-weight: 800; flex: 0 0 auto; }
+  .fig-src span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fig-src i { margin-left: auto; font-style: normal; color: #8a99ad; font-size: 14px; flex: 0 0 auto; }
+  .fig-foot {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    border-top: 1px solid #e6ebf4; padding-top: 18px; font-size: 15px; color: #6b7a90;
+  }
+  .fig-audit {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: #eef3ff; border: 1px solid #dbe6ff; color: #1f56e0;
+    border-radius: 999px; padding: 5px 14px; font-weight: 700; font-size: 15px;
+  }
+  .fig-audit.warn { background: #fff7ed; border-color: #fed7aa; color: #b4690e; }
+  .fig-meta { font-family: var(--font-mono); font-size: 13.5px; color: #7b8aa0; }
+</style>
+</head>
+<body>
+<div class="figure">
+  <header class="fig-head">
+    <div class="fig-brand"><span class="fig-dot"></span><b>CLAP</b><span>· Grounded answer</span></div>
+    <div class="fig-chip" id="fig-lib">—</div>
+  </header>
+
+  <section class="fig-q">
+    <div class="fig-label" data-i18n="figure.question">Question</div>
+    <h1 id="fig-question">…</h1>
+  </section>
+
+  <section class="fig-a">
+    <div class="fig-label" data-i18n="figure.answer">Answer</div>
+    <div class="fig-answer" id="fig-answer"><div class="fig-answer-inner" id="fig-answer-inner"></div></div>
+  </section>
+
+  <section class="fig-sources">
+    <div class="fig-label" data-i18n="figure.sources">Sources</div>
+    <div id="fig-sources"></div>
+  </section>
+
+  <footer class="fig-foot">
+    <span class="fig-audit" id="fig-audit">—</span>
+    <span class="fig-meta" id="fig-model"></span>
+  </footer>
+</div>
+
+<script>{% include "i18n.js" %}</script>
+<script>
+(async function () {
+  const T = (k, v) => CLAPi18n.t(k, v);
+  const params = new URLSearchParams(location.search || "");
+  CLAPi18n.setLang(params.get("lang") || "en");
+
+  let data;
+  try {
+    data = await (await fetch("/api/session/get?t=" + Date.now(), { cache: "no-store" })).json();
+  } catch (e) {
+    document.getElementById("fig-question").textContent = "Failed to load";
+    return;
+  }
+  const msgs = data.messages || [];
+  let aiIndex = -1;
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    if (msgs[i].role === "assistant") { aiIndex = i; break; }
+  }
+  if (aiIndex < 0) { document.getElementById("fig-question").textContent = "No answer yet"; return; }
+  const ai = msgs[aiIndex];
+  let user = null;
+  for (let i = aiIndex - 1; i >= 0; i--) {
+    if (msgs[i].role === "user") { user = msgs[i]; break; }
+  }
+
+  document.getElementById("fig-question").textContent = (user && user.content) || "—";
+  const answer = document.getElementById("fig-answer-inner");
+  answer.innerHTML = ai.html || "";
+  document.getElementById("fig-model").textContent =
+    (ai.provider || "?") + " · " + (ai.model || "?") + (ai.latency_ms != null ? " · " + ai.latency_ms + " ms" : "");
+
+  const sources = ai.sources || [];
+  const libs = [...new Set(sources.map((s) => (s.zim || "").replace(/\.zim$/i, "")).filter(Boolean))];
+  document.getElementById("fig-lib").textContent = libs.join(" · ") || "—";
+
+  const box = document.getElementById("fig-sources");
+  sources.slice(0, 4).forEach((s) => {
+    const row = document.createElement("div");
+    row.className = "fig-src";
+    const n = document.createElement("b");
+    n.textContent = "[" + s.n + "]";
+    const t = document.createElement("span");
+    t.textContent = (s.title || s.path || "").replace(/_/g, " ");
+    const lib = document.createElement("i");
+    lib.textContent = s.zim || "";
+    row.appendChild(n); row.appendChild(t); row.appendChild(lib);
+    box.appendChild(row);
+  });
+
+  const audit = ai.audit;
+  if (audit) {
+    const pct = Math.round((audit.score || 0) * 100);
+    const pill = document.getElementById("fig-audit");
+    pill.textContent = T("audit.score", {
+      pct: pct, g: audit.sentences_grounded || 0, t: audit.sentences_total || 0
+    }) + (audit.sentences_unverified ? T("audit.unverified", { n: audit.sentences_unverified }) : "");
+    if (pct < 60) pill.classList.add("warn");
+  }
+
+  // fit the answer: shrink when it overflows, grow a little when the answer
+  // is short so the square does not look empty
+  const answerBox = document.getElementById("fig-answer");
+  const fit = () => {
+    let size = 28;
+    answer.style.fontSize = size + "px";
+    while (answer.scrollHeight > answerBox.clientHeight - 4 && size > 15) {
+      size -= 1;
+      answer.style.fontSize = size + "px";
+    }
+    while (size < 32) {
+      const next = size + 1;
+      answer.style.fontSize = next + "px";
+      if (answer.scrollHeight > answerBox.clientHeight - 4) break;
+      size = next;
+    }
+  };
+  fit();
+  setTimeout(fit, 250);  // after MathML layout settles
+})();
+</script>
+</body>
+</html>

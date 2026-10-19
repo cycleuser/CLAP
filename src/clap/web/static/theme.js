@@ -10,6 +10,10 @@
     const saved = localStorage.getItem(KEY);
     if (saved === "light" || saved === "dark" || saved === "auto") mode = saved;
   } catch (e) { /* private mode */ }
+  try {
+    const fromUrl = new URLSearchParams(window.location.search || "").get("theme");
+    if (fromUrl === "light" || fromUrl === "dark" || fromUrl === "auto") mode = fromUrl;
+  } catch (e) { /* old browser */ }
 
   const listeners = [];
 
