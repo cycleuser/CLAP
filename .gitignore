@@ -165,3 +165,9 @@ clap/src/CLAP/chroma_db/*
 
 # Article figures and paper material (not pushed)
 /article/
+
+# Local credentials and runtime session data
+.env
+.env.local
+*.clap
+*.clapshare

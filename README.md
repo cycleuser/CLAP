@@ -1,6 +1,6 @@
 # CLAP: Chat Local And Persistent – Design and Implementation of Contextual Dialogue Loadable under Privacy-Sensitive Network Scenarios with the Ollama Framework’s Local Large Language Model Semantic Interaction Software
 
-**Version:** 1.0.0
+**Version:** 2.0.0
 
 ## 1. Introduction
 
@@ -9,9 +9,9 @@ In recent years, the internet has permeated every aspect of daily life, and onli
 Regarding privacy, LLMs that rely on network access are susceptible to man-in-the-middle attacks during conversation sessions. Furthermore, user interactions with service providers may lead to the collection of dialogue data, potentially utilized for purposes beyond the original intent.
 On another front, without proper archiving of online conversations, resuming previous discussions becomes difficult in privacy-conscious scenarios. Additionally, ensuring the sanitization and deletion of dialogue records is a formidable task.
 
-To address these issues, we present `CLAP`, short for "Chat Local And Persistent." This software is designed for local, persistent dialogues and is built atop the `Ollama` framework, leveraging `Ollama-Python` to interface with locally managed LLMs. `CLAP` facilitates interaction with local LLMs while storing dialogue locally in binary files with a `.clap` extension, enabling users to load these files for dialogue continuation. It also supports exporting dialogue transcripts as Markdown documents.
+To address these issues, we present `CLAP`, short for "Chat Local And Persistent." This software is designed for local, persistent dialogues and is built atop the `Ollama` framework, leveraging `Ollama-Python` to interface with locally managed LLMs. `CLAP` facilitates interaction with local LLMs while storing the full conversation state as portable JSON session files with a `.clap` extension (v1 files are imported losslessly), enabling users to load these files for dialogue continuation. It also supports exporting dialogue transcripts as Markdown documents.
 
-Featuring a graphical user interface (GUI), `CLAP` enables semantic interaction with local LLMs offline, ensuring privacy and data independence. Developed in Python, it enjoys broad compatibility across platforms, including Windows 10/11 and GNU/Linux.
+CLAP ships a local web workspace and a PySide6 desktop GUI, and enables semantic interaction with local LLMs offline, with a ten-language interface, branchable sessions, structured annotations, and citation-checked answers over external ZIM libraries — ensuring privacy and data independence. Developed in Python, it enjoys broad compatibility across platforms, including Windows 10/11 and GNU/Linux.
 
 The development harnesses PySide6 for GUI design and BeeWare for project packaging, ensuring stability and ease of use.
 
@@ -85,10 +85,16 @@ The commands are as follows:
 ```bash
 git clone https://github.com/cycleuser/CLAP.git
 cd CLAP
-pip insall -r requirements.txt
-cd clap
-python src\CLAP\app.py
-# Or briefcase dev
+pip install -e ".[rag,web,zim,cli]"
+clap --web          # web workspace at http://127.0.0.1:5057
+clap                # desktop GUI (PySide6)
+```
+
+## 3.3 Install from PyPI
+
+```bash
+pip install "clap-llm[rag,web,zim,cli]"
+clap --web
 ```
 
 # 4 Interface

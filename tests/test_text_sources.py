@@ -7,7 +7,7 @@ from clap.core.text_sources import TextLibrary
 
 def test_accepts_markdown_and_gb18030_text(tmp_path):
     lib = TextLibrary([str(tmp_path)])
-    a = lib.add_bytes("notes.md", "量子力学研究波函数。".encode("utf-8"))
+    a = lib.add_bytes("notes.md", "量子力学研究波函数。".encode())
     assert a["name"] == "notes.md" and a["duplicate"] is False
     b = lib.add_bytes("gbk.txt", "波函数的模方是概率密度。".encode("gb18030"))
     assert b["name"] == "gbk.txt"

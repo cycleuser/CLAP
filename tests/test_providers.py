@@ -2,6 +2,7 @@
 key masking, availability probing, fallback routing (all offline, loopback)."""
 
 import json
+import re
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -78,7 +79,7 @@ def _clean_env(monkeypatch):
 
 
 def test_streaming_and_usage_capture(fake_server):
-    p = OpenAICompatProvider("fake", fake_server, api_key="sk-test-123456789")
+    p = OpenAICompatProvider("fake", fake_server, api_key="dummy-test-key-123456789")
     out = list(p.chat([{"role": "user", "content": "hi"}], model="fake-model", stream=True))
     assert out == ["你好", "，世界"]
     assert p.last_meta["tokens"] == {"in": 11, "out": 4}
@@ -87,20 +88,20 @@ def test_streaming_and_usage_capture(fake_server):
 
 
 def test_masked_key_never_leaks(fake_server):
-    p = OpenAICompatProvider("fake", fake_server, api_key="sk-test-123456789")
+    p = OpenAICompatProvider("fake", fake_server, api_key="dummy-test-key-123456789")
     masked = p.masked_key()
-    assert "sk-test" not in masked
-    assert repr(p).find("sk-test") < 0
+    assert "dummy-test-key" not in masked
+    assert repr(p).find("dummy-test-key") < 0
 
 
 def test_http_error_masked_in_message(fake_server):
     FakeOpenAIHandler.fail_with = 401
     try:
-        p = OpenAICompatProvider("fake", fake_server, api_key="sk-test-123456789")
+        p = OpenAICompatProvider("fake", fake_server, api_key="dummy-test-key-123456789")
         with pytest.raises(ProviderError) as ei:
             list(p.chat([{"role": "user", "content": "hi"}], model="fake-model"))
         msg = str(ei.value)
-        assert "sk-test" not in msg  # key never appears in error text
+        assert "dummy-test-key" not in msg  # key never appears in error text
     finally:
         FakeOpenAIHandler.fail_with = 0
 
@@ -118,7 +119,7 @@ def test_is_available(fake_server):
 
 def test_env_provider_discovered(monkeypatch, fake_server):
     monkeypatch.setenv("CLAP_ONLINE_BASE_URL", fake_server)
-    monkeypatch.setenv("CLAP_ONLINE_API_KEY", "sk-env-key-987654321")
+    monkeypatch.setenv("CLAP_ONLINE_API_KEY", "dummy-env-key-987654321")
     monkeypatch.delenv("CLAP_OLLAMA_LOCAL", raising=False)
     reg = discover_providers()
     # W2/W3: ollama defaults to the OpenAI-compatible cloud endpoint; the
@@ -188,4 +189,4 @@ def test_discovery_masks_never_error(monkeypatch):
     for pid, p in reg.items():
         assert pid and p.base
         dumped = repr(p) + str(p)
-        assert "sk-" not in dumped
+        assert not re.search(r"(sk-|nvapi-|AIza|hf_)[A-Za-z0-9_-]{12,}", dumped)

@@ -119,7 +119,7 @@ def fake_base():
 
 @pytest.fixture()
 def client(fake_base, tmp_path, monkeypatch):
-    fake = OpenAICompatProvider("fake-web", fake_base, api_key="sk-fake-web-0000", name="fake")
+    fake = OpenAICompatProvider("fake-web", fake_base, api_key="dummy-fake-web-0000", name="fake")
     monkeypatch.setattr(webapp, "get_registry", lambda: {"fake-web": fake})
     monkeypatch.setattr(webapp, "DEFAULT_PROVIDER", "fake-web")
     # never touch the user's real settings file
@@ -175,9 +175,9 @@ def test_pages_offer_language_and_theme_switches(client, path):
     assert 'id="lang"' in html and 'id="theme"' in html
     assert "CLAPi18n" in html and "CLAPtheme" in html
     for tag in ("zh", "en", "ja", "fr", "ru", "de", "es", "pt", "it", "ko"):
-        assert 'value="%s"' % tag in html, (path, tag)
+        assert f'value="{tag}"' in html, (path, tag)
     for mode in ("auto", "light", "dark"):
-        assert 'value="%s"' % mode in html, (path, mode)
+        assert f'value="{mode}"' in html, (path, mode)
 
 
 def test_i18n_dictionaries_cover_all_ten_languages():
@@ -250,7 +250,7 @@ def test_models_grouped_and_masked(client):
     assert j["success"] is True
     fake = [g for g in j["groups"] if g["provider"] == "fake-web"][0]
     assert fake["available"] is True and fake["models"] == ["fake-chat-model"]
-    assert "sk-fake-web-0000" not in json.dumps(j)
+    assert "dummy-fake-web-0000" not in json.dumps(j)
     assert j["default"] == {"provider": "fake-web", "model": "fake-chat-model"}
     assert isinstance(j["env_assembly"], list)
 
@@ -297,14 +297,14 @@ def test_chat_rejects_empty_and_unknown_provider(client):
 def test_chat_error_is_friendly_and_scrubbed(client, monkeypatch):
     class Boom(OpenAICompatProvider):
         def chat(self, messages, model, stream=True):
-            raise PR.ProviderError(f"{self.id}: HTTP 401 key sk-fake-web-0000 bad")
+            raise PR.ProviderError(f"{self.id}: HTTP 401 key dummy-fake-web-0000 bad")
 
-    boom = Boom("fake-web", "http://127.0.0.1:9/v1", api_key="sk-fake-web-0000")
+    boom = Boom("fake-web", "http://127.0.0.1:9/v1", api_key="dummy-fake-web-0000")
     monkeypatch.setattr(webapp, "get_registry", lambda: {"fake-web": boom})
     events = _chat(client, {"message": "hi", "model": "fake-chat-model"})
     meta = [e for e in events if e.get("done")][0]["meta"]
     assert "HTTP 401" in meta["error"]
-    assert "sk-fake-web-0000" not in meta["error"]
+    assert "dummy-fake-web-0000" not in meta["error"]
 
 
 def test_stop_endpoint_graceful(client):
@@ -384,7 +384,7 @@ def test_share_package_is_created_and_key_free(client, tmp_path):
     pkg = j["package"]
     assert pkg.endswith(".clapshare")
     data = open(pkg, "rb").read()
-    assert b"sk-" not in data
+    assert b"dummy-" not in data
 
 
 def test_adopt_endpoint_delegates(client, monkeypatch):
@@ -497,7 +497,7 @@ def test_env_assembler_maps_names_to_inventory_ids():
         "models": {"deepseek": ["deepseek-flash"]},
     }
     env = {
-        "DEEPSEEK_API_KEY": "sk-test-0000000000",
+        "DEEPSEEK_API_KEY": "dummy-test-0000000000",
         "OLLAMA_CLOUD_API_KEY": "ollama-test-00000",
         "HF_TOKEN": "hf-not-in-inventory",
         "DOC2X_API_KEY": "doc2x-000000000",
@@ -507,7 +507,7 @@ def test_env_assembler_maps_names_to_inventory_ids():
     assert set(reg) == {"deepseek", "ollama-cloud"}  # HF not in inventory → ignored
     assert "DOC2X_API_KEY" not in json.dumps(asm.sources)
     payload = json.dumps(asm.sources)
-    assert "sk-test-0000000000" not in payload and "ollama-test-00000" not in payload
+    assert "dummy-test-0000000000" not in payload and "ollama-test-00000" not in payload
     assert asm.sources["deepseek"]["masked"].startswith("***len")
 
 
@@ -524,7 +524,7 @@ def test_bundled_inventory_is_present_and_keyless():
     assert probe["path"] and probe["path"].endswith("opencode_models.json")
     assert len(probe["providers"]) == 13
     assert sum(len(v) for v in probe["models"].values()) == 188
-    assert "sk-" not in json.dumps(probe)
+    assert "dummy-" not in json.dumps(probe)
 
 
 def test_local_ollama_needs_explicit_opt_in(monkeypatch):
@@ -540,7 +540,7 @@ def test_local_ollama_needs_explicit_opt_in(monkeypatch):
 def test_regenerate_replaces_the_previous_answer(client):
     _chat(client, {"message": "第一问"})
     msgs = client.get("/api/session/get").get_json()["messages"]
-    user, old_answer = msgs[0], msgs[1]
+    user = msgs[0]
     events = _chat(client, {"mode": "regenerate", "message_id": user["id"], "model": "fake-chat-model"})
     assert any(e.get("done") for e in events)
     after = client.get("/api/session/get").get_json()
@@ -584,7 +584,7 @@ def test_settings_endpoint_lists_providers_with_masked_keys(client):
     assert j["success"] is True
     fake = [p for p in j["providers"] if p["id"] == "fake-web"][0]
     assert fake["configured"] is True
-    assert "sk-fake-web-0000" not in json.dumps(j)
+    assert "dummy-fake-web-0000" not in json.dumps(j)
     assert fake["masked"].startswith("***len")
     assert j["default"]["provider"] == "fake-web"  # registry fallback in tests
 
@@ -592,25 +592,25 @@ def test_settings_endpoint_lists_providers_with_masked_keys(client):
 def test_settings_save_provider_masks_and_persists(client, tmp_path):
     j = client.post(
         "/api/settings/provider",
-        json={"id": "deepseek", "base": "https://api.deepseek.com/v1", "key": "sk-test-abcdef123456"},
+        json={"id": "deepseek", "base": "https://api.deepseek.com/v1", "key": "dummy-test-abcdef123456"},
     ).get_json()
     assert j["success"] is True
-    assert "sk-test-abcdef123456" not in json.dumps(j)
+    assert "dummy-test-abcdef123456" not in json.dumps(j)
     assert j["provider"]["masked"].startswith("***len")
 
     raw = (tmp_path / "settings.json").read_text(encoding="utf-8")
-    assert "sk-test-abcdef123456" in raw  # stored locally, not in API responses
+    assert "dummy-test-abcdef123456" in raw  # stored locally, not in API responses
     mode = oct((tmp_path / "settings.json").stat().st_mode & 0o777)
     assert mode == "0o600"
 
     listed = client.get("/api/settings").get_json()
     row = [p for p in listed["providers"] if p["id"] == "deepseek"][0]
     assert row["source"] == "settings" and row["base"].endswith("/v1")
-    assert "sk-test-abcdef123456" not in json.dumps(listed)
+    assert "dummy-test-abcdef123456" not in json.dumps(listed)
 
 
 def test_settings_default_and_remove(client, tmp_path):
-    client.post("/api/settings/provider", json={"id": "deepseek", "base": "https://api.deepseek.com/v1", "key": "sk-xxxxxxxxxxxx"})
+    client.post("/api/settings/provider", json={"id": "deepseek", "base": "https://api.deepseek.com/v1", "key": "dummy-xxxxxxxxxxxx"})
     j = client.post("/api/settings/default", json={"provider": "deepseek", "model": "deepseek-flash"}).get_json()
     assert j["success"] is True and j["default"]["model"] == "deepseek-flash"
     assert client.delete("/api/settings/provider/deepseek").get_json()["success"] is True
@@ -636,22 +636,22 @@ def test_settings_import_opencode_json_masks_and_keeps_models(client, tmp_path):
     doc = {
         "provider": {
             "deepseek": {
-                "options": {"baseURL": "https://api.deepseek.com/v1", "apiKey": "sk-import-1234567890"},
+                "options": {"baseURL": "https://api.deepseek.com/v1", "apiKey": "dummy-import-1234567890"},
                 "models": {"deepseek-flash": {}, "deepseek-v4-pro": {}},
             },
-            "nvidia": {"options": {"baseURL": "https://integrate.api.nvidia.com/v1", "apiKey": "nvapi-abcdefghij"}},
+            "nvidia": {"options": {"baseURL": "https://integrate.api.nvidia.com/v1", "apiKey": "dummy-nvidia-key"}},
         }
     }
     j = client.post("/api/settings/import", json={"json": json.dumps(doc)}).get_json()
     assert j["success"] is True and j["count"] == 2
-    assert "sk-import" not in json.dumps(j) and "nvapi-" not in json.dumps(j)
+    assert "dummy-import" not in json.dumps(j) and "dummy-nvidia-" not in json.dumps(j)
 
     saved = json.loads((tmp_path / "settings.json").read_text(encoding="utf-8"))
     assert saved["providers"]["deepseek"]["models"] == ["deepseek-flash", "deepseek-v4-pro"]
-    assert saved["providers"]["deepseek"]["apiKey"] == "sk-import-1234567890"  # local file only
+    assert saved["providers"]["deepseek"]["apiKey"] == "dummy-import-1234567890"  # local file only
 
     listed = client.get("/api/settings").get_json()
-    assert "sk-import" not in json.dumps(listed) and "nvapi-" not in json.dumps(listed)
+    assert "dummy-import" not in json.dumps(listed) and "dummy-nvidia-" not in json.dumps(listed)
     row = [p for p in listed["providers"] if p["id"] == "deepseek"][0]
     assert row["source"] == "settings"
     assert "deepseek-flash" in row["models"]
@@ -663,7 +663,7 @@ def test_manual_models_are_used_when_endpoint_lists_nothing(tmp_path, monkeypatc
     from clap.core import settings_store as SS
 
     SS.set_provider(
-        "manual", "http://127.0.0.1:9/v1", "sk-manual-12345678", models=["manual-a", "manual-b"]
+        "manual", "http://127.0.0.1:9/v1", "dummy-manual-12345678", models=["manual-a", "manual-b"]
     )
     reg = PR.discover_providers()
     assert reg["manual"].list_models() == ["manual-a", "manual-b"]
@@ -683,7 +683,7 @@ def test_text_upload_accepts_plain_text_and_rejects_other_formats(client):
 
     ok = client.post(
         "/api/text/add",
-        data={"file": (io.BytesIO("量子力学研究波函数与概率密度。\n".encode("utf-8")), "notes.md")},
+        data={"file": (io.BytesIO("量子力学研究波函数与概率密度。\n".encode()), "notes.md")},
         content_type="multipart/form-data",
     ).get_json()
     assert ok["success"] is True and ok["count"] == 1
