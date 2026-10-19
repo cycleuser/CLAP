@@ -109,7 +109,7 @@ class OllamaProvider(Provider):
         except Exception as e:
             raise ProviderError(f"{self.id}: {e}") from e
 
-    def list_models(self) -> list[str]:
+    def list_models(self, timeout: float = PROBE_TIMEOUT_S) -> list[str]:
         try:
             data = self._client().list()
             return [m["model"] for m in data.get("models", [])]
@@ -219,10 +219,10 @@ class OpenAICompatProvider(Provider):
 
         return _gen() if stream else list(_gen())
 
-    def list_models(self) -> list[str]:
+    def list_models(self, timeout: float = PROBE_TIMEOUT_S) -> list[str]:
         try:
             req = urllib.request.Request(f"{self.base}/models", headers=self._headers())
-            with urllib.request.urlopen(req, timeout=PROBE_TIMEOUT_S) as r:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
                 data = json.loads(r.read())
             ids = [m.get("id", "") for m in data.get("data", []) if m.get("id")]
             return ids or list(self._fallback_models)
@@ -496,19 +496,33 @@ def provider_from_names(registry: dict, provider_id: str | None) -> Provider:
     return registry.get("ollama-local") or next(iter(registry.values()))
 
 
-def default_model_for(registry: dict, provider_id: str) -> str:
-    """W3: no hardcoded default model — take one the provider actually lists.
+def known_models(provider_id: str) -> list[str]:
+    """Model ids known without touching the network (settings + inventory)."""
+    from clap.core import settings_store
 
-    The live `/models` answer wins (it reflects what the key can use today);
-    the vendored inventory is the offline fallback; empty string when neither
-    knows, so callers fail loudly instead of guessing a retired model id.
+    saved = settings_store.load().get("providers", {}).get(provider_id, {}).get("models", [])
+    inventory = load_probe_list().get("models", {}).get(provider_id, [])
+    return list(dict.fromkeys(list(saved) + list(inventory)))
+
+
+def default_model_for(registry: dict, provider_id: str) -> str:
+    """First known model, without a blocking network probe.
+
+    Live `/models` is only consulted when neither the saved settings nor the
+    vendored inventory knows the provider — page loads must stay instant.
     """
+    models = known_models(provider_id)
+    if models:
+        return models[0]
     prov = registry.get(provider_id)
     if prov is not None:
-        live = prov.list_models()
+        fallback = getattr(prov, "_fallback_models", []) or []
+        if fallback:
+            return fallback[0]
+        live = prov.list_models(timeout=2.0)
         if live:
             return live[0]
-    return (load_probe_list().get("models", {}).get(provider_id) or [""])[0]
+    return ""
 
 
 def masked_endpoint_table(registry: dict) -> list[dict]:

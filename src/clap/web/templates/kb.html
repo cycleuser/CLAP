@@ -51,19 +51,6 @@
     <p class="empty" style="padding:16px 20px" data-i18n="common.loading">加载中…</p>
   </section>
 
-  <section class="panel" style="margin:16px 22px 0">
-    <div class="card">
-      <h2><span data-i18n="text.heading">文本资料</span> <span class="hint" data-i18n="text.hint">只接受纯文本（.txt / .md / .markdown / .text）</span></h2>
-      <div class="composer-row">
-        <input type="file" id="text-files" multiple accept=".txt,.md,.markdown,.text" style="font-size:13px;max-width:320px">
-        <button class="btn small" id="text-upload" type="button" data-i18n="text.upload">添加文本文件</button>
-        <span class="spacer"></span>
-        <input id="text-path" data-i18n-placeholder="text.pathPlaceholder" placeholder="文件或目录路径" style="min-width:260px;max-width:420px">
-        <button class="btn ghost small" id="text-add-path" type="button" data-i18n="text.addPath">按路径添加</button>
-      </div>
-      <div class="ann-list" id="text-list" style="max-height:280px"></div>
-    </div>
-  </section>
 
   <section class="kb-work">
     <div class="panel">
@@ -77,6 +64,21 @@
     </div>
     <div class="panel reader" id="reader">
       <p class="empty" data-i18n="kb.readerHint">点击左侧结果，在这里读原文。</p>
+    </div>
+  </section>
+
+
+  <section class="panel" id="text-section" style="margin:16px 22px 0">
+    <div class="card">
+      <h2><span data-i18n="text.heading">文本资料</span> <span class="hint" data-i18n="text.hint">只接受纯文本（.txt / .md / .markdown / .text）</span></h2>
+      <div class="composer-row">
+        <input type="file" id="text-files" multiple accept=".txt,.md,.markdown,.text" style="font-size:13px;max-width:320px">
+        <button class="btn small" id="text-upload" type="button" data-i18n="text.upload">添加文本文件</button>
+        <span class="spacer"></span>
+        <input id="text-path" data-i18n-placeholder="text.pathPlaceholder" placeholder="文件或目录路径" style="min-width:260px;max-width:420px">
+        <button class="btn ghost small" id="text-add-path" type="button" data-i18n="text.addPath">按路径添加</button>
+      </div>
+      <div class="ann-list" id="text-list" style="max-height:280px"></div>
     </div>
   </section>
 
@@ -100,6 +102,7 @@
   let currentHit = null;
 
   langSel.value = CLAPi18n.lang;
+  CLAPi18n.apply();
   const themeSel = document.getElementById("theme");
   themeSel.value = CLAPtheme.mode;
   themeSel.addEventListener("change", () => CLAPtheme.setMode(themeSel.value));
@@ -128,7 +131,8 @@
       const r = await fetch("/api/zim/list");
       const j = await r.json();
       zims = j.zims || [];
-      $("root-line").textContent = T("kb.roots", { roots: (j.roots || []).join(" · ") || T("kb.rootsMissing") });
+      const shortRoots = (j.roots || []).map((r) => String(r).replace(/\\/g, "/").split("/").filter(Boolean).pop());
+      $("root-line").textContent = T("kb.roots", { roots: shortRoots.join(" · ") || T("kb.rootsMissing") });
       const grid = $("zim-grid");
       grid.innerHTML = "";
       if (!zims.length) {

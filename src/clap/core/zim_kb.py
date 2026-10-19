@@ -539,6 +539,7 @@ def locate_passage(text: str, query: str, max_span: int = 1400) -> dict | None:
 
     low = text.lower()
     best: tuple[float, int, int] | None = None
+    scored: list[tuple[float, int, int]] = []
     for start, end in spans:
         block = low[start:end]
         score = 0.0
@@ -546,8 +547,18 @@ def locate_passage(text: str, query: str, max_span: int = 1400) -> dict | None:
             hits = block.count(term.lower())
             if hits:
                 score += hits * min(len(term), 6)
-        if score and (best is None or score > best[0]):
-            best = (score, start, end)
+        if score:
+            scored.append((score, start, end))
+    if scored:
+        top = max(s[0] for s in scored)
+        # prefer the earliest paragraph that is still strongly relevant:
+        # citations open at the abstract/intro, not deep inside a methods
+        # section that merely repeats the term most often
+        threshold = top * 0.5
+        for score, start, end in scored:
+            if score >= threshold:
+                best = (score, start, end)
+                break
 
     if best is None:
         first = -1

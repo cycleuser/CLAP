@@ -206,6 +206,7 @@
   let busy = false;
 
   langSel.value = CLAPi18n.lang;
+  CLAPi18n.apply();
   const themeSel = $("theme");
   themeSel.value = CLAPtheme.mode;
   themeSel.addEventListener("change", () => CLAPtheme.setMode(themeSel.value));
@@ -460,6 +461,7 @@
       const forkBtn = el("button", "src-btn", T("msg.fork"));
       forkBtn.type = "button";
       forkBtn.title = T("msg.forkTitle");
+      forkBtn.dataset.action = "fork";
       forkBtn.addEventListener("click", () => forkAt(m.id));
       head.appendChild(forkBtn);
     }
@@ -468,6 +470,7 @@
       const delBtn = el("button", "src-btn", T("msg.delete"));
       delBtn.type = "button";
       delBtn.title = T("msg.deleteTitle");
+      delBtn.dataset.action = "delete";
       delBtn.addEventListener("click", () => askDelete(m));
       head.appendChild(delBtn);
     }
@@ -475,6 +478,7 @@
       const editBtn = el("button", "src-btn", T("chat.edit"));
       editBtn.type = "button";
       editBtn.title = T("chat.editTitle");
+      editBtn.dataset.action = "edit";
       editBtn.addEventListener("click", () => openEditModal(m));
       head.appendChild(editBtn);
     }
@@ -482,6 +486,7 @@
       const reBtn = el("button", "src-btn", T("chat.regenerate"));
       reBtn.type = "button";
       reBtn.title = T("chat.regenerateTitle");
+      reBtn.dataset.action = "regenerate";
       reBtn.addEventListener("click", () => regenerate(m.parent));
       head.appendChild(reBtn);
     }
@@ -586,7 +591,8 @@
       const bar = $("branch-bar");
       bar.innerHTML = "";
       (j.branches || []).forEach((b) => {
-        const pill = el("button", "branch-pill" + (b.id === branchId ? " on" : ""), b.name || b.id);
+        const bName = (b.name && b.name !== "主线") ? b.name : T("branch.main");
+        const pill = el("button", "branch-pill" + (b.id === branchId ? " on" : ""), bName);
         pill.type = "button";
         pill.appendChild(el("small", "", T("branch.turns", { n: b.turns || 0 })));
         pill.addEventListener("click", () => loadSession(b.id));
@@ -595,6 +601,16 @@
 
       const bl = $("branch-list");
       bl.innerHTML = "";
+      (j.branches || []).forEach((b) => {
+        const bName = (b.name && b.name !== "主线") ? b.name : T("branch.main");
+        const row = el("div", "ann-item");
+        const btn = el("button", "branch-pill" + (b.id === branchId ? " on" : ""), bName);
+        btn.type = "button";
+        btn.appendChild(el("small", "", T("branch.turns", { n: b.turns || 0 })));
+        btn.addEventListener("click", () => loadSession(b.id));
+        row.appendChild(btn);
+        bl.appendChild(row);
+      });
       $("branch-empty").style.display = (j.branches || []).length ? "none" : "";
 
       const list = $("ann-list");
@@ -925,7 +941,7 @@
     try {
       const r = await fetch("/api/session/renew", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ branch: branchId || undefined })
+        body: JSON.stringify({ branch: branchId || undefined, lang: CLAPi18n.lang })
       });
       const j = await r.json();
       if (!j.success) throw new Error(j.error || T("renew.failed"));
@@ -1192,7 +1208,7 @@
       list.appendChild(row);
     });
     listSec.appendChild(list);
-    wrap.appendChild(listSec);
+    // appended after the import/add sections (see below)
 
     // ---- add provider ----
     const addSec = el("section", "settings-section");
@@ -1236,8 +1252,6 @@
     addForm.appendChild(addBtn);
     addSec.appendChild(addForm);
     addSec.appendChild(el("p", "muted", T("settings.keyHint") + " " + T("settings.modelsHint")));
-    wrap.appendChild(addSec);
-
     // ---- import from JSON ----
     const impSec = el("section", "settings-section");
     impSec.appendChild(el("h4", "", T("settings.importTitle")));
@@ -1275,6 +1289,8 @@
     impSec.appendChild(ta);
     impSec.appendChild(impRow);
     wrap.appendChild(impSec);
+    wrap.appendChild(addSec);
+    wrap.appendChild(listSec);
 
     openModal(T("settings.title"), wrap, []);
   }

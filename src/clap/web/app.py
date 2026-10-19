@@ -173,7 +173,7 @@ def reset_registry_cache() -> None:
 
 
 def default_selection(registry: dict) -> dict:
-    """Default provider/model: saved settings → deepseek-flash → live first."""
+    """Default provider/model: saved settings → deepseek-flash → known list."""
     from clap.core import settings_store
 
     pref = settings_store.load().get("default") or {}
@@ -186,13 +186,12 @@ def default_selection(registry: dict) -> dict:
     if not pid:
         return {"provider": "", "model": ""}
 
-    prov = registry.get(pid)
-    live = prov.list_models() if prov is not None else []
+    known = PR.known_models(pid)
     wanted = pref.get("model") if pref.get("provider") == pid else ""
     model = ""
-    if wanted and (not live or wanted in live):
+    if wanted and (not known or wanted in known):
         model = wanted
-    elif pid in PREFERRED_MODELS and (not live or PREFERRED_MODELS[pid] in live):
+    elif pid in PREFERRED_MODELS and (not known or PREFERRED_MODELS[pid] in known):
         model = PREFERRED_MODELS[pid]
     else:
         model = PR.default_model_for(registry, pid)
@@ -429,7 +428,7 @@ def api_models():
                 }
             )
             continue
-        live = prov.list_models()
+        live = PR.known_models(pid) or list(getattr(prov, "_fallback_models", []) or [])
         from_env = pid in env_registry
         groups.append(
             {
@@ -440,7 +439,9 @@ def api_models():
                 "also_env": row.get("also_env", []),
                 "source": "env" if from_env else "config",
                 "masked": prov.masked_key(),
-                "available": prov.is_available(),
+                # configured providers are listed immediately; a real
+                # connectivity check is the explicit “测试连接” action
+                "available": True,
                 "unsupported": "",
                 "models": (live or row["models"])[:80],
             }
@@ -454,9 +455,9 @@ def api_models():
                 "configured": True,
                 "env": "",
                 "masked": prov.masked_key(),
-                "available": prov.is_available(),
+                "available": True,
                 "unsupported": "",
-                "models": prov.list_models()[:80],
+                "models": (PR.known_models(pid) or list(getattr(prov, "_fallback_models", []) or []) or prov.list_models(timeout=2.0))[:80],
             }
         )
     return jsonify(
@@ -723,7 +724,13 @@ def api_settings_get():
     for pid in sorted(set(saved["providers"]) | set(registry) | set(probe["providers"])):
         prov = registry.get(pid)
         saved_row = saved["providers"].get(pid) or {}
-        models = (prov.list_models() if prov else []) or saved_row.get("models") or probe["models"].get(pid, [])
+        models = (
+            saved_row.get("models")
+            or PR.known_models(pid)
+            or list(getattr(prov, "_fallback_models", []) or [])
+            or (prov.list_models(timeout=2.0) if prov else [])
+            or probe["models"].get(pid, [])
+        )
         rows.append(
             {
                 "id": pid,
@@ -731,7 +738,7 @@ def api_settings_get():
                 "masked": prov.masked_key() if prov else SS.masked(saved_row.get("apiKey", "")),
                 "configured": prov is not None,
                 "source": "settings" if saved_row else ("discovered" if prov else "inventory"),
-                "available": prov.is_available() if prov else False,
+                "available": prov is not None,
                 "models": models,
                 "models_manual": list(saved_row.get("models") or []),
             }
@@ -1049,7 +1056,7 @@ def api_session_renew():
     s = current_session()
     branch = _branch_id(s, body.get("branch"))
     try:
-        digest = RN.renewal(s, branch)
+        digest = RN.renewal(s, branch, lang=(body.get("lang") or "zh"))
     except Exception as e:
         return jsonify({"success": False, "error": _scrub(str(e), get_registry())}), 400
     _autosave(s)
@@ -1362,7 +1369,9 @@ def timeline_page():
         )
     try:
         s = SM.load_session(file_path)
-        body = TL.render_timeline_html(s, title="CLAP Timeline")
+        body = TL.render_timeline_html(
+            s, title="CLAP Timeline", lang=(request.args.get("lang") or "zh")
+        )
         return render_template(
             "timeline.html",
             error_key=None,

@@ -29,10 +29,12 @@ MAX_ARTICLE_CHARS = 200_000
 
 
 def roots() -> list[str]:
-    """Configured text roots (env first, then the managed default)."""
+    """Configured text roots: CLAP_TEXT_ROOTS replaces the managed default."""
     raw = os.environ.get("CLAP_TEXT_ROOTS", "")
-    candidates = [p for p in raw.split(os.pathsep) if p.strip()]
-    candidates.append(str(Path.home() / ".clap" / "text_sources"))
+    if raw.strip():
+        candidates = [p for p in raw.split(os.pathsep) if p.strip()]
+    else:
+        candidates = [str(Path.home() / ".clap" / "text_sources")]
     out: list[str] = []
     for c in candidates:
         c = os.path.abspath(os.path.expanduser(c))
