@@ -99,6 +99,27 @@ Examples:
     sess_sp = sess_p.add_subparsers(dest="sessions_command")
     sess_sp.add_parser("list", help="List library sessions")
 
+    vis_p = sp.add_parser("visualize", help="Render timeline HTML/SVG from a session (F4)")
+    vis_p.add_argument("file", help=".clap file")
+    vis_p.add_argument("--out", default=None, help="Output base path (default <stem>.timeline.html)")
+    vis_p.add_argument("--svg", action="store_true", help="Also export an SVG figure")
+    vis_p.add_argument("--png", action="store_true", help="Also export a PNG figure (same layout)")
+
+    ann_p = sp.add_parser("annotate", help="Annotate a message (F5)")
+    ann_p.add_argument("file", help=".clap file")
+    ann_p.add_argument("--target", required=True, help="Message id")
+    ann_p.add_argument("--kind", required=True, choices=list(
+        ("keypoint", "question", "generated", "reviewed", "error_fix", "knowledge_point")))
+    ann_p.add_argument("--tags", default="", help="Comma-separated tags")
+    ann_p.add_argument("--note", default="")
+    ann_p.add_argument("--author", default="teacher")
+
+    exp_p = sp.add_parser("annotate-export", help="Export annotations to CSV/JSON (F5)")
+    exp_p.add_argument("file", help=".clap file")
+    exp_p.add_argument("--format", choices=["csv", "json"], default="csv")
+    exp_p.add_argument("--out", default=None, help="Output path (default <stem>.annotations.csv/.json)")
+    exp_p.add_argument("--stats", default=None, help="Also write a kind-distribution PNG here")
+
     return parser
 
 
@@ -134,6 +155,12 @@ def main(argv=None):
         return adopt_command(args)
     elif args.command == "sessions":
         return sessions_command(args)
+    elif args.command == "visualize":
+        return visualize_command(args)
+    elif args.command == "annotate":
+        return annotate_command(args)
+    elif args.command == "annotate-export":
+        return annotate_export_command(args)
     return interactive_mode()
 
 
@@ -442,6 +469,70 @@ def sessions_command(args):
         return 0
     print("Usage: clap sessions list")
     return 1
+
+
+# ------------------------------------------------------------------ F4/F5
+
+
+def visualize_command(args):
+    from clap.core import session as session_mod
+    from clap.core import timeline as timeline_mod
+
+    base = args.out or str(__import__("pathlib").Path(args.file).with_suffix("")) + ".timeline"
+    try:
+        s = session_mod.load_session(args.file)
+        html_out = base if str(base).endswith(".html") else base + ".html"
+        text = timeline_mod.render_timeline_html(s)
+        with open(html_out, "w", encoding="utf-8") as f:
+            f.write(text)
+        print(f"HTML: {html_out}")
+        if args.svg or args.png:
+            from clap.gui import export_timeline_svg as ex
+            if args.svg:
+                print("SVG:", ex.write_timeline_svg(s, str(base).replace(".html", "") + ".svg"))
+            if args.png:
+                print("PNG:", ex.write_timeline_png(s, str(base).replace(".html", "") + ".png"))
+        return 0
+    except Exception as e:
+        print(f"Error: {e}")
+        return 1
+
+
+def annotate_command(args):
+    from clap.core import session as session_mod
+
+    try:
+        s = session_mod.load_session(args.file)
+        tags = [x.strip() for x in args.tags.split(",") if x.strip()]
+        ann = session_mod.add_annotation(
+            s, args.target, args.kind, tags=tags, note=args.note, author=args.author
+        )
+        session_mod.save_session(s, args.file)
+        print(f"Annotated {args.target} -> {ann['id']} ({args.kind})")
+        return 0
+    except Exception as e:
+        print(f"Error: {e}")
+        return 1
+
+
+def annotate_export_command(args):
+    from clap.core import session as session_mod
+
+    try:
+        s = session_mod.load_session(args.file)
+        default_ext = ".json" if args.format == "json" else ".csv"
+        out = args.out or str(__import__("pathlib").Path(args.file).with_suffix("")) + default_ext
+        path = session_mod.export_annotations(s, out, fmt=args.format)
+        rows = session_mod.annotation_rows(s)
+        print(f"Exported {len(rows)} annotations -> {path}")
+        if args.stats:
+            from clap.gui import export_timeline_svg as ex
+
+            print("Distribution PNG:", ex.write_annotation_distribution(s, args.stats))
+        return 0
+    except Exception as e:
+        print(f"Error: {e}")
+        return 1
 
 
 def start_gui():

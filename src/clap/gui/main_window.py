@@ -222,6 +222,10 @@ class MainWindow(QMainWindow):
         self.adopt_action.triggered.connect(self.adopt_session_package)
         toolbar.addAction(self.adopt_action)
 
+        self.annotate_action = QAction(t("annotate"), self)
+        self.annotate_action.triggered.connect(self.annotate_selected_message)
+        toolbar.addAction(self.annotate_action)
+
         toolbar.addSeparator()
 
         self.model_label = QLabel(f"{t('model')}:")
@@ -520,6 +524,7 @@ class MainWindow(QMainWindow):
                     parent = node["id"]
                 session_mod.ensure_main_branch(self.session)
             session_mod.save_session(self.session, path)
+            self._last_session_file = path
             self.status_bar.showMessage(f"{t('saved')}: {os.path.basename(path)}")
         except Exception as e:
             QMessageBox.warning(self, t("error"), f"{t('failed_save')}: {e}")
@@ -596,10 +601,42 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.warning(self, t("error"), f"{t('adopt_failed')}: {e}")
 
+    def annotate_selected_message(self):
+        """Open the annotation dialog over the current view (F5)."""
+        if not self.messages:
+            QMessageBox.information(self, t("info"), t("no_message_annotatable"))
+            return
+        from clap.core import session as session_mod
+        from clap.gui.annotate_dialog import AnnotateDialog
+
+        dlg = AnnotateDialog(self.messages, parent=self, session=self.session)
+        if not dlg.exec():
+            return
+        payload = dlg.payload()
+        if not payload:
+            return
+        try:
+            if self.session is None:
+                self.session = self._make_session()
+            session_mod.add_annotation(self.session, **payload)
+            session_mod._add_history(self.session, "annotate", detail=payload)
+            fp = self._current_session_file()
+            if fp:
+                session_mod.save_session(self.session, fp)
+            self._render_messages()
+            self.status_bar.showMessage(f"{t('annotated')}: {payload['target']} ({payload['kind']})")
+        except Exception as e:
+            QMessageBox.warning(self, t("error"), f"{t('failed_save')}: {e}")
+
+    def _current_session_file(self) -> str:
+        """Best-effort path of the session file last saved/loaded (or '')."""
+        return getattr(self, "_last_session_file", "")
+
     def _apply_loaded_session(self, path: str):
         """Common body of load_chat_from_file for a concrete path."""
         from clap.core import session as session_mod
 
+        self._last_session_file = path
         s = session_mod.load_session(path)
         self.session = s
         main = session_mod.main_branch(s)
@@ -689,14 +726,55 @@ class MainWindow(QMainWindow):
             return text.replace("\n", "<br>")
 
     def _render_messages(self):
-        """Render all messages in the chat browser."""
-        html = ""
+        """Render all messages in the chat browser (with annotation badges)."""
+        from clap.core.session import KIND_LABELS
+
+        html_lines = ""
+        ann_index = {}
+        if self.session:
+            for ann in self.session.get("annotations", []):
+                ann_index.setdefault(ann.get("target"), []).append(ann)
         for msg in self.messages:
             role = msg.get("role", "")
             content = msg.get("content", "")
             role_display = t("you") if role == "user" else t("assistant")
-            html += f"<p><b>{role_display}:</b></p>{self._markdown(content)}<hr>"
-        self.chat_browser.setHtml(html)
+            badges = ""
+            for ann in ann_index.get(msg.get("id"), []):
+                label = KIND_LABELS.get(ann.get("kind", ""), ann.get("kind", ""))
+                badges += (
+                    f'<span style="background:#dbeafe;color:#1d4ed8;border-radius:4px;'
+                    f'padding:0 6px;font-size:11px;">{_esc(label)}</span> '
+                )
+            html_lines += (
+                f"<p><b>{role_display}:</b> {badges}</p>{self._markdown(content)}<hr>"
+            )
+        self.chat_browser.setHtml(html_lines)
+
+    def _md_chat_html(self, temp_messages: list[dict]) -> str:
+        """HTML for the streaming view (base messages + live response)."""
+        from clap.core.session import KIND_LABELS
+
+        html_lines = ""
+        ann_index = {}
+        if self.session:
+            for ann in self.session.get("annotations", []):
+                ann_index.setdefault(ann.get("target"), []).append(ann)
+        for msg in temp_messages:
+            role = msg.get("role", "")
+            content = msg.get("content", "")
+            role_display = t("you") if role == "user" else t("assistant")
+            badges = ""
+            anns = ann_index.get(msg.get("id"), []) if self.session else []
+            for ann in anns:
+                label = KIND_LABELS.get(ann.get("kind", ""), ann.get("kind", ""))
+                badges += (
+                    f'<span style="background:#dbeafe;color:#1d4ed8;border-radius:4px;'
+                    f'padding:0 6px;font-size:11px;">{_esc(label)}</span> '
+                )
+            html_lines += (
+                f"<p><b>{role_display}:</b> {badges}</p>{self._markdown(content)}<hr>"
+            )
+        return html_lines
 
     def send_message(self):
         """Send message to LLM."""
@@ -746,13 +824,7 @@ class MainWindow(QMainWindow):
         """Handle new text from chat thread."""
         self.current_response += text
         temp_messages = self.messages + [{"role": "assistant", "content": self.current_response}]
-        html = ""
-        for msg in temp_messages:
-            role = msg.get("role", "")
-            content = msg.get("content", "")
-            role_display = t("you") if role == "user" else t("assistant")
-            html += f"<p><b>{role_display}:</b></p>{self._markdown(content)}<hr>"
-        self.chat_browser.setHtml(html)
+        self.chat_browser.setHtml(self._md_chat_html(temp_messages))
 
         scrollbar = self.chat_browser.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
@@ -964,3 +1036,8 @@ def main():
     window = MainWindow()
     window.show()
     sys.exit(app.exec())
+
+
+def _esc(text: str) -> str:
+    """Minimal HTML escaping for inline snippets."""
+    return (text or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")

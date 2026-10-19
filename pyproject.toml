@@ -47,6 +47,9 @@ clap = "clap:main"
 package-dir = {"" = "src"}
 packages = ["clap", "clap.core", "clap.gui", "clap.cli", "clap.web", "clap.utils"]
 
+[tool.setuptools.package-data]
+"clap.gui" = ["assets/*.html"]
+
 [tool.setuptools.dynamic]
 version = {attr = "clap.__version__"}
 

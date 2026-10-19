@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CLAP Timeline</title>
+<style>
+  :root {
+    --blue-700: #1d4ed8; --blue-600: #2563eb; --blue-100: #dbeafe; --blue-50: #eff6ff;
+    --grey-900: #111827; --grey-700: #374151; --grey-500: #6b7280;
+    --grey-300: #d1d5db; --grey-200: #e5e7eb; --grey-100: #f3f4f6;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", sans-serif;
+    color: var(--grey-900); background: var(--grey-100); margin: 0;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 24px 16px 48px; }
+  header h1 { font-size: 22px; margin: 4px 0 10px; color: var(--grey-900); }
+  .facts { display: flex; flex-wrap: wrap; gap: 10px; font-size: 12.5px; color: var(--grey-700); }
+  .facts span { background: #fff; border: 1px solid var(--grey-300); border-radius: 6px; padding: 3px 10px; }
+  .facts b { color: var(--blue-700); font-weight: 600; }
+  section.branch { background: #fff; border: 1px solid var(--grey-300); border-radius: 10px; margin-top: 18px; padding: 14px 16px; }
+  section.branch h2 {
+    font-size: 15px; margin: 2px 0 12px; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+    border-bottom: 1px solid var(--grey-200); padding-bottom: 8px;
+  }
+  .bname { background: var(--blue-600); color: #fff; border-radius: 6px; padding: 2px 10px; font-weight: 600; }
+  .bmodel { color: var(--blue-700); font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; }
+  .bturns { color: var(--grey-500); font-size: 12.5px; }
+  .forkmeta {
+    color: var(--blue-700); background: var(--blue-50); border: 1px dashed var(--blue-600);
+    border-radius: 6px; padding: 1px 8px; font-size: 12px;
+  }
+  div.turns { display: flex; flex-direction: column; gap: 8px; }
+  div.card { display: flex; gap: 10px; border: 1px solid var(--grey-200); border-radius: 8px; padding: 8px 10px; background: #fcfcfd; }
+  div.card.user { background: var(--blue-50); border-color: var(--blue-100); }
+  div.card.system { background: var(--grey-200); }
+  div.card.branch-root { border-left: 4px solid var(--blue-600); }
+  div.card.errored { border-left: 4px solid #b91c1c; }
+  .turnno {
+    min-width: 28px; height: 28px; border-radius: 14px; background: var(--grey-900);
+    color: #fff; font-size: 13px; display: flex; align-items: center; justify-content: center; font-weight: 600;
+  }
+  div.card.user .turnno { background: var(--blue-600); }
+  .body { flex: 1; min-width: 0; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 12px; color: var(--grey-700); }
+  .role { font-weight: 700; border-radius: 4px; padding: 1px 8px; color: #fff; }
+  .role-user { background: var(--blue-600); }
+  .role-assistant { background: var(--grey-700); }
+  .role-system { background: var(--grey-500); }
+  .model, .provider { font-family: ui-monospace, Menlo, monospace; }
+  .lat, .tok { color: var(--grey-500); }
+  .mid { color: var(--grey-300); font-family: ui-monospace, Menlo, monospace; }
+  .errline { color: #b91c1c; font-size: 12px; margin-top: 2px; }
+  .content { margin-top: 5px; font-size: 13.5px; line-height: 1.65; white-space: pre-wrap; word-break: break-word; }
+  .badge {
+    display: inline-block; margin-left: 4px; font-size: 11px; border-radius: 4px; padding: 0 6px;
+    background: #fff; border: 1px solid var(--blue-600); color: var(--blue-700); font-weight: 600;
+  }
+  .badge.ann-keypoint, .badge.ann-knowledge_point { background: var(--blue-600); color: #fff; }
+  .badge.ann-question { border-style: dashed; }
+  .annnote { margin-top: 4px; font-size: 12px; color: var(--blue-700); background: var(--blue-50); border-radius: 6px; padding: 3px 8px; display: inline-block; }
+  footer { margin-top: 20px; color: var(--grey-500); font-size: 12px; text-align: center; }
+</style>
+</head>
+<body>
+{{CONTENT}}
+</body>
+</html>
