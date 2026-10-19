@@ -170,12 +170,18 @@ def new_message(
     tokens: dict | None = None,
     error: str | None = None,
     ts: int | None = None,
+    **extra,
 ) -> dict:
-    """Create a v2 message node. `id` is assigned when appended to a session."""
+    """Create a v2 message node. `id` is assigned when appended to a session.
+
+    `extra` carries optional provenance extensions used by the web layer
+    (retrieval `sources`, `audit` table, `grounded` flag, `zims` filter).
+    Unknown keys are preserved so exports can quote them verbatim.
+    """
     if role not in ROLES:
         raise SessionError(f"unknown role {role!r}; expected one of {ROLES}")
     tok = tokens if tokens is not None else {"in": None, "out": None}
-    return {
+    msg = {
         "id": None,  # filled by append helpers
         "parent": parent,
         "role": role,
@@ -188,6 +194,10 @@ def new_message(
         "error": error,
         "annotations": [],
     }
+    for key, value in extra.items():
+        if value is not None:
+            msg[key] = value
+    return msg
 
 
 def new_session(

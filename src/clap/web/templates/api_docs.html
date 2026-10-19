@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light dark">
+<title>CLAP · 接口文档</title>
+<style>{% include "app.css" %}</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand"><strong>CLAP</strong><span>接口文档</span></div>
+    <nav class="nav">
+      <a href="/">对话</a>
+      <a href="/kb">知识库</a>
+      <a href="/timeline">时间轴</a>
+      <a href="/api-docs" class="on">接口文档</a>
+    </nav>
+  </header>
+
+  <main class="docs">
+    <h1>CLAP Web 接口</h1>
+    <p class="lead">所有模型调用都经由 provider 层，端点是 OpenAI 兼容的 HTTP API；
+      凭证只从环境变量（<code>*_API_KEY</code> / <code>*_TOKEN</code> / <code>*_KEY</code>）、
+      <code>~/.config/opencode/opencode.json</code>、<code>~/.pi/agent/auth.json</code> 内存读取，
+      接口只返回掩码。</p>
+
+    <section>
+      <h2>对话与模型</h2>
+      <table>
+        <thead><tr><th>方法</th><th>路径</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td class="method">GET</td><td><code>/api/models</code></td>
+              <td>按 provider 分组的模型清单；含环境变量装配结果（<code>env_assembly</code>）、掩码凭证、可用性与默认选择。</td></tr>
+          <tr><td class="method">POST</td><td><code>/api/chat</code></td>
+              <td>SSE 流式对话。请求体 <code>{"message","provider","model","branch","lane","grounded","zims","top_k","renew_summary"}</code>；
+                  事件依次为 <code>start</code> →（有依据模式）<code>sources</code> → 若干 <code>delta</code> → <code>done</code>
+                  （含延迟、token 用量、来源清单、逐句审计 <code>audit</code>、错误）。
+                  有依据模式：先检索 ZIM，材料为空时直接弃答「来源未提及」。</td></tr>
+          <tr><td class="method">POST</td><td><code>/api/chat/stop</code></td>
+              <td>暂停流（对话暂停）。请求体 <code>{"stream_id"}</code>，留空则暂停当前全部在跑流；
+                  已生成文本保留，会话中记为 <code>error:"cancelled"</code>。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>会话</h2>
+      <table>
+        <thead><tr><th>方法</th><th>路径</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td class="method">GET</td><td><code>/api/session/get</code></td>
+              <td>当前内存会话：主线消息、分支、标注、隐私切换记录。</td></tr>
+          <tr><td class="method">POST</td><td><code>/api/session/new</code></td><td>新建空会话。</td></tr>
+          <tr><td class="method">POST</td><td><code>/api/session/save</code></td>
+              <td>保存为 v2 <code>.clap</code>。请求体 <code>{"path"}</code>。</td></tr>
+          <tr><td class="method">POST</td><td><code>/api/session/load</code></td>
+              <td>加载 <code>.clap</code>（v1 自动无损迁移）。请求体 <code>{"path"}</code>。</td></tr>
+          <tr><td class="method">POST</td><td><code>/api/session/fork</code></td>
+              <td>在某条消息处分叉。请求体 <code>{"at","name","model","note"}</code>。</td></tr>
+          <tr><td class="method">POST</td><td><code>/api/session/export</code></td>
+              <td>导出当前分支。请求体 <code>{"format":"md|html|json","branch","path"}</code>；
+                  返回 <code>content</code> 与已写入的 <code>path</code>。HTML 零外链。</td></tr>
+          <tr><td class="method">POST</td><td><code>/api/session/share</code></td>
+              <td>打包为 <code>.clapshare</code>（不含密钥与本机路径）。</td></tr>
+          <tr><td class="method">POST</td><td><code>/api/session/adopt</code></td>
+              <td>导入分享包。请求体 <code>{"package","policy":"rename|overwrite|fork"}</code>。</td></tr>
+          <tr><td class="method">POST</td><td><code>/api/session/renew</code></td>
+              <td>会话续期：生成确定性摘要（消息数、轮次、标注要点），返回 <code>summary</code>；
+                  下一条对话把它作为 system 桥接消息携带。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>ZIM 外置知识库（有依据模式）</h2>
+      <table>
+        <thead><tr><th>方法</th><th>路径</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td class="method">GET</td><td><code>/api/zim/list</code></td>
+              <td>列出 <code>CLAP_ZIM_ROOTS</code>（默认 <code>~/Documents/重点文献</code>）下的 ZIM：条目数、体积、语言、可读性。</td></tr>
+          <tr><td class="method">POST</td><td><code>/api/zim/search</code></td>
+              <td><code>{"query","zims","top_k"}</code> → 命中 <code>[{zim,path,title,snippet,score}]</code>。</td></tr>
+          <tr><td class="method">GET</td><td><code>/api/zim/article?zim=&amp;path=</code></td>
+              <td>读取原文（HTML→纯文本），用于引用面板与阅读器。</td></tr>
+          <tr><td class="method">POST</td><td><code>/api/zim/suggest</code></td>
+              <td>标题补全。请求体 <code>{"prefix","zim","limit"}</code>。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>标注</h2>
+      <table>
+        <thead><tr><th>方法</th><th>路径</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td class="method">POST</td><td><code>/api/annotate</code></td>
+              <td>请求体 <code>{"target","kind","tags","note","author"}</code>；
+                  kind 取 <code>keypoint / question / generated / reviewed / error_fix / knowledge_point</code>。</td></tr>
+          <tr><td class="method">POST</td><td><code>/api/annotate/export</code></td>
+              <td>导出 CSV/JSON。请求体 <code>{"path","format"}</code>。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>知识库</h2>
+      <table>
+        <thead><tr><th>方法</th><th>路径</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td class="method">POST</td><td><code>/api/kb/index</code></td><td>multipart 上传文件并入库。</td></tr>
+          <tr><td class="method">POST</td><td><code>/api/kb/search</code></td><td><code>{"query","k"}</code> 检索。</td></tr>
+          <tr><td class="method">GET</td><td><code>/api/kb/stats</code></td><td>库状态（分块数、目录）。</td></tr>
+          <tr><td class="method">POST</td><td><code>/api/kb/clear</code></td><td>清空知识库。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>页面</h2>
+      <table>
+        <thead><tr><th>方法</th><th>路径</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td class="method">GET</td><td><code>/</code></td><td>对话页（默认落地页）：有依据模式、分支、标注、导出/分享/续期。</td></tr>
+          <tr><td class="method">GET</td><td><code>/kb</code></td><td>知识库页：ZIM 库列表、检索、原文阅读、分享包导入。</td></tr>
+          <tr><td class="method">GET</td><td><code>/timeline?file=…</code></td><td>时间轴视图，渲染指定 <code>.clap</code> 会话。</td></tr>
+          <tr><td class="method">GET</td><td><code>/api-docs</code></td><td>本页。</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span>默认地址 127.0.0.1:5057（5000 端口在 macOS 上被 AirPlay 占用）。</span>
+  </footer>
+</div>
+</body>
+</html>

@@ -1105,11 +1105,12 @@ def run_S7(results: Path) -> bool:
                              latency_ms=meta.get("latency_ms"), tokens=meta.get("tokens"), error=meta.get("error"))
     steps.append(f"生成讲评问题: {len(text)} chars, latency={meta.get('latency_ms')}ms, tokens={meta.get('tokens')}")
 
-    # 3. 教师基于生成的问题继续教学 2 轮（真实）
+    # 3. 教师基于生成的问题继续教学 3 轮（真实）
     q_follow = "把第 2 个讲评问题改写成适合 C 背景学生的引导式提问。"
     qa_pair(s, "b1", q_follow, cloud_q)
     qa_pair(s, "b1", "预设一个学生的典型错误回答，并写出讲评话术。", cloud_q)
-    steps.append("教师主线上继续 2 轮（真实调用）")
+    qa_pair(s, "b1", "这个知识点在全课 45 分钟里安排在第几分钟讲评最合适？给出理由。", cloud_q)
+    steps.append("教师主线上继续 3 轮（真实调用）")
 
     # 4. 关键节点标注（备课视角）
     main_own = SM.branch_path(s, "b1")
@@ -1215,15 +1216,17 @@ def run_S7(results: Path) -> bool:
     return all(ok for _, ok, _ in verify)
 
 
-def build_s7_report(s: dict, d: Path, csv_path: Path) -> str:
+def build_s7_report(s: dict, d: Path, csv_path: Path | str) -> str:
     """Single-file HTML report: summary + timeline + CSV + stats (offline)."""
     from clap.core.session import KIND_LABELS
+
+    csv_text = Path(csv_path).read_text(encoding="utf-8")
 
     rows = SM.annotation_rows(s)
     kinds = SM.count_kinds(s)
     timeline = TL.render_timeline_html(s, title="S7 · 全链路教学会话")
     timeline_inner = timeline[timeline.index('<div class="wrap">'):timeline.index("</body>")] if '<div class="wrap">' in timeline else timeline
-    csv_esc = csv_path.read_text(encoding="utf-8").replace("&", "&amp;").replace("<", "&lt;")
+    csv_esc = csv_text.replace("&", "&amp;").replace("<", "&lt;")
     main_branch = SM.main_branch(s)
     own = SM.branch_path(s, main_branch["id"])
     lat = [m.get("latency_ms") for m in own if m.get("latency_ms") is not None]

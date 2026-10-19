@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light dark">
+<title>CLAP · 知识库（ZIM 外置库）</title>
+<style>{% include "app.css" %}</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand"><strong>CLAP</strong><span>知识库 · ZIM 外置库</span></div>
+    <nav class="nav">
+      <a href="/">对话</a>
+      <a href="/kb" class="on">知识库</a>
+      <a href="/timeline" id="tl-link">时间轴</a>
+      <a href="/api-docs">接口</a>
+    </nav>
+  </header>
+
+  <div class="toolbar">
+    <span class="chip on" id="root-line">检索根目录加载中…</span>
+    <span class="spacer"></span>
+    <div class="group">
+      <input id="share-path" placeholder="分享包路径（.clapshare）" style="font:inherit;padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);min-width:280px">
+      <button class="btn ghost small" id="adopt-btn" type="button">导入分享包</button>
+    </div>
+    <span class="status" id="status">就绪</span>
+  </div>
+
+  <section class="kb-grid" id="zim-grid">
+    <p class="empty" style="padding:16px 20px">正在读取 ZIM 库…</p>
+  </section>
+
+  <section class="kb-work">
+    <div class="panel">
+      <div class="search-row">
+        <input id="q" placeholder="检索知识库（中文/英文均可，如：量子 / transformer）">
+        <button class="btn small" id="search-btn">检索</button>
+      </div>
+      <div class="results" id="results">
+        <p class="empty">输入关键词开始检索。ZIM 自带倒排索引，查询不出网、也不建副本。</p>
+      </div>
+    </div>
+    <div class="panel reader" id="reader">
+      <p class="empty">点击左侧结果，在这里阅读原文。</p>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <span>只读 · 零拷贝 · 离线：ZIM 文件就是知识源本身。</span>
+    <span>在对话页开启「有依据模式」后，检索结果会作为唯一材料交给模型，并逐句审计。</span>
+  </footer>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  let zims = [];
+  let lastQuery = "";
+
+  function toast(t) {
+    const n = $("toast");
+    n.textContent = t;
+    n.classList.add("show");
+    clearTimeout(n._tm);
+    n._tm = setTimeout(() => n.classList.remove("show"), 2600);
+  }
+  function setStatus(t, bad) {
+    $("status").textContent = t;
+    $("status").className = "status" + (bad ? " bad" : "");
+  }
+  function el(tag, cls, text) {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined) n.textContent = text;
+    return n;
+  }
+
+  async function loadZims() {
+    try {
+      const r = await fetch("/api/zim/list");
+      const j = await r.json();
+      zims = j.zims || [];
+      $("root-line").textContent = "根目录：" + ((j.roots || []).join(" · ") || "未配置");
+      const grid = $("zim-grid");
+      grid.innerHTML = "";
+      if (!zims.length) {
+        const p = el("p", "empty", "没有发现 .zim 文件。设置环境变量 CLAP_ZIM_ROOTS 指向你的 ZIM 目录，或把文件放进 ~/Documents/重点文献/。");
+        p.style.padding = "16px 20px";
+        grid.appendChild(p);
+        return;
+      }
+      zims.forEach((z) => {
+        const card = el("article", "panel zim-card");
+        card.appendChild(el("h3", "", z.name));
+        const nums = el("div", "nums");
+        nums.appendChild(el("span", "", "条目 "));
+        nums.lastChild.appendChild(el("b", "", z.entries.toLocaleString()));
+        nums.appendChild(el("span", "", "体积 "));
+        nums.lastChild.appendChild(el("b", "", z.size_mb + " MB"));
+        nums.appendChild(el("span", "", "语言 " + (z.language || "—")));
+        card.appendChild(nums);
+        if (z.error) {
+          card.appendChild(el("div", "bad", "读取失败：" + z.error));
+        } else {
+          card.appendChild(el("div", "ok", "可用 · 离线检索"));
+        }
+        const go = el("button", "go", "只搜这个库");
+        go.type = "button";
+        go.addEventListener("click", () => {
+          $("q").value = "";
+          $("q").focus();
+          $("q").dataset.zim = z.name;
+          toast("已锁定：" + z.name + "（再次点击卡片可取消）");
+        });
+        card.appendChild(go);
+        grid.appendChild(card);
+      });
+    } catch (e) {
+      setStatus("ZIM 探测失败：" + e.message, true);
+    }
+  }
+
+  function highlight(text) {
+    const n = el("div", "body");
+    if (!lastQuery) { n.textContent = text; return n; }
+    const q = lastQuery.split(/\s+/).filter(Boolean);
+    if (!q.length) { n.textContent = text; return n; }
+    const re = new RegExp("(" + q.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|") + ")", "gi");
+    const frag = document.createDocumentFragment();
+    let last = 0, m;
+    while ((m = re.exec(text)) !== null) {
+      if (m.index > last) frag.appendChild(document.createTextNode(text.slice(last, m.index)));
+      frag.appendChild(el("mark", "", m[0]));
+      last = m.index + m[0].length;
+      if (m[0].length === 0) re.lastIndex++;
+    }
+    if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+    n.appendChild(frag);
+    return n;
+  }
+
+  async function readArticle(zim, path) {
+    setStatus("读取原文…");
+    try {
+      const r = await fetch("/api/zim/article?zim=" + encodeURIComponent(zim) + "&path=" + encodeURIComponent(path));
+      const j = await r.json();
+      if (!j.success) throw new Error(j.error || "读取失败");
+      const box = $("reader");
+      box.innerHTML = "";
+      box.appendChild(el("h2", "", j.title || path));
+      box.appendChild(el("div", "meta", j.zim + " · " + j.path + " · " + j.chars + " 字"));
+      box.appendChild(highlight(j.text));
+      setStatus("已打开 · " + j.chars + " 字");
+    } catch (e) {
+      setStatus("读取失败：" + e.message, true);
+    }
+  }
+
+  async function search() {
+    const query = $("q").value.trim();
+    if (!query) return;
+    lastQuery = query;
+    const zim = $("q").dataset.zim || "";
+    $("search-btn").disabled = true;
+    setStatus("检索中…");
+    try {
+      const r = await fetch("/api/zim/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query, zims: zim ? [zim] : undefined, top_k: 12 })
+      });
+      const j = await r.json();
+      if (!j.success) throw new Error(j.error || "检索失败");
+      const box = $("results");
+      box.innerHTML = "";
+      if (!j.results.length) {
+        box.appendChild(el("p", "empty", "没有命中。换个关键词，或检查 ZIM 库是否已列在根目录下。"));
+        setStatus("无命中");
+        return;
+      }
+      j.results.forEach((h) => {
+        const hit = el("div", "hit");
+        hit.appendChild(el("div", "t", h.title || h.path));
+        hit.appendChild(el("div", "p", h.zim + " · " + h.path));
+        if (h.snippet) hit.appendChild(el("div", "s", h.snippet));
+        hit.addEventListener("click", () => readArticle(h.zim, h.path));
+        box.appendChild(hit);
+      });
+      setStatus("命中 " + j.results.length + " 条");
+    } catch (e) {
+      setStatus("检索失败：" + e.message, true);
+    } finally {
+      $("search-btn").disabled = false;
+    }
+  }
+
+  $("search-btn").addEventListener("click", search);
+  $("q").addEventListener("keydown", (e) => { if (e.key === "Enter") search(); });
+
+  $("adopt-btn").addEventListener("click", async () => {
+    const p = $("share-path").value.trim();
+    if (!p) { toast("请填写 .clapshare 路径"); return; }
+    try {
+      const r = await fetch("/api/session/adopt", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ package: p, policy: "rename" })
+      });
+      const j = await r.json();
+      if (!j.success) throw new Error(j.error || "导入失败");
+      toast("已导入：" + (j.record && (j.record.session_id || j.record.path) || "完成"));
+      setStatus("分享包已导入会话库");
+    } catch (e) {
+      setStatus("导入失败：" + e.message, true);
+    }
+  });
+
+  loadZims();
+})();
+</script>
+</body>
+</html>

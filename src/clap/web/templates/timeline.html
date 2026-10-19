@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light dark">
+<title>CLAP · 时间轴 · {{ title }}</title>
+<style>{% include "app.css" %}</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand"><strong>CLAP 时间轴</strong><span>core/timeline.py 渲染</span></div>
+    <nav class="nav">
+      <a href="/">对话</a>
+      <a href="/timeline" class="on">时间轴</a>
+      <a href="/api-docs">接口文档</a>
+    </nav>
+  </header>
+
+  <main class="timeline-wrap">
+    <div class="panel card" style="margin:14px 20px 0">
+      <h2>会话文件 <span class="hint">渲染来源</span></h2>
+      <form method="get" action="/timeline" class="composer-row">
+        <input id="file" name="file" value="{{ file_param or '' }}"
+               placeholder="/绝对路径/session.clap"
+               style="flex:1;min-width:220px;font:inherit;font-size:15px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:7px 10px"
+               aria-label="会话文件路径">
+        <button class="btn small" type="submit">渲染</button>
+      </form>
+      {% if error %}<p class="err-text" style="margin-top:10px">{{ error }}</p>{% endif %}
+    </div>
+
+    {% if not error and html_body %}
+    <div class="frame">{{ html_body | safe }}</div>
+    {% elif not error %}
+    <p class="empty" style="margin:18px 22px">填写一个 .clap 会话文件路径，即可看到整棵会话时间轴（主线 + 支线 + 标注）。</p>
+    {% endif %}
+  </main>
+
+  <footer class="footer">
+    <span>时间轴与对话页共用同一套蓝灰设计语言。</span>
+    <span><a href="/api-docs">接口清单 →</a></span>
+  </footer>
+</div>
+</body>
+</html>

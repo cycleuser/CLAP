@@ -23,8 +23,8 @@ Examples:
   clap                  Start interactive CLI mode
   clap --gui            Start GUI mode
   clap --web            Start web server
-  clap chat "Hello"     Send a single message
-  clap models           List available Ollama models
+  clap chat "Hello"     Send a single message (provider layer, default ollama-cloud)
+  clap models           List models grouped by provider
   clap kb index doc.pdf Index a document into knowledge base
   clap fork s.clap --at m6 --name 提高 --model deepseek-chat
   clap tree s.clap      Show branches and turns
@@ -40,16 +40,17 @@ Examples:
     parser.add_argument("-V", "--version", action="version", version=f"clap-llm {__version__}")
     parser.add_argument("-g", "--gui", action="store_true", help="Start GUI mode")
     parser.add_argument("-w", "--web", action="store_true", help="Start web server mode")
-    parser.add_argument("--host", default="0.0.0.0", help="Host for web server")
-    parser.add_argument("--port", type=int, default=5000, help="Port for web server")
+    parser.add_argument("--host", default="127.0.0.1", help="Host for web server (local-only by default)")
+    parser.add_argument("--port", type=int, default=5057, help="Port for web server (5000 is macOS AirPlay)")
 
     sp = parser.add_subparsers(dest="command", help="Available commands")
 
     chat_p = sp.add_parser("chat", help="Send a single message")
     chat_p.add_argument("message", nargs="*", help="Message")
     chat_p.add_argument("--model", "-m", help="Model")
+    chat_p.add_argument("--provider", "-p", default=None, help="Provider id (default ollama-cloud; W2)")
 
-    sp.add_parser("models", help="List available Ollama models")
+    sp.add_parser("models", help="List models grouped by provider")
     sp.add_parser("interactive", help="Start interactive chat mode")
 
     kb_p = sp.add_parser("kb", help="Knowledge base operations")
@@ -167,22 +168,44 @@ def main(argv=None):
 # ------------------------------------------------------------------ core
 
 
+def _resolve_provider(provider_id=None):
+    """W2: every model call goes through the provider layer (OpenAI-compat HTTP).
+
+    Default = ollama-cloud (ollama.com/v1); the local daemon only when
+    CLAP_OLLAMA_LOCAL=1. Returns (provider_id, provider, registry).
+    """
+    from clap.core.providers import default_model_for, discover_providers
+
+    registry = discover_providers()
+    pid = provider_id or ("ollama-cloud" if "ollama-cloud" in registry else next(iter(registry), ""))
+    if pid not in registry:
+        raise KeyError(f"provider {pid!r} not configured (have: {sorted(registry)})")
+    prov = registry[pid]
+    model = default_model_for(registry, pid)
+    return pid, prov, model
+
+
 def chat_command(args):
     try:
-        import ollama as ollama_lib
+        from clap.core.providers import default_model_for, discover_providers
 
         msg = " ".join(args.message) if getattr(args, "message", None) else None
         if not msg:
             print('Usage: clap chat "your message"')
             return 1
-        models = [m["model"] for m in ollama_lib.list().get("models", [])]
-        if not models:
-            print("No models found. Install Ollama.")
+        registry = discover_providers()
+        pid = args.provider or ("ollama-cloud" if "ollama-cloud" in registry else next(iter(registry), ""))
+        if pid not in registry:
+            print(f"No provider {pid!r} configured (have: {sorted(registry)}).")
             return 1
-        model = args.model if args.model in models else models[0]
-        print(f"Model: {model}\nYou: {msg}\nAI: ", end="", flush=True)
-        for chunk in ollama_lib.chat(model=model, messages=[{"role": "user", "content": msg}], stream=True):
-            print(chunk["message"]["content"], end="", flush=True)
+        prov = registry[pid]
+        model = args.model or default_model_for(registry, pid)
+        if not model:
+            print(f"No model known for provider {pid!r}.")
+            return 1
+        print(f"Provider: {pid}  Model: {model}\nYou: {msg}\nAI: ", end="", flush=True)
+        for chunk in prov.chat([{"role": "user", "content": msg}], model=model, stream=True):
+            print(chunk, end="", flush=True)
         print()
         return 0
     except Exception as e:
@@ -191,16 +214,22 @@ def chat_command(args):
 
 
 def models_command(args):
+    """Provider-grouped model inventory (W2: unified HTTP path)."""
     try:
-        import ollama as ollama_lib
+        from clap.core.providers import discover_providers
 
-        models = [m["model"] for m in ollama_lib.list().get("models", [])]
-        if not models:
-            print("No models found.")
+        registry = discover_providers()
+        if not registry:
+            print("No providers configured (set *_API_KEY or ~/.config/opencode/opencode.json).")
             return 1
-        print("Available models:")
-        for m in models:
-            print(f"  - {m}")
+        for pid in sorted(registry):
+            prov = registry[pid]
+            live = prov.list_models()
+            status = "ok" if live else "unreachable"
+            print(f"{pid}  [{status}]  key={prov.masked_key()}")
+            print(f"  base={prov.base}")
+            for m in (live or [])[:20]:
+                print(f"    - {m}")
         return 0
     except Exception as e:
         print(f"Error: {e}")
@@ -232,25 +261,32 @@ def kb_command(args):
 
 def interactive_mode():
     try:
-        import ollama as ollama_lib
+        from clap.core.providers import default_model_for, discover_providers
 
-        models = [m["model"] for m in ollama_lib.list().get("models", [])]
+        registry = discover_providers()
+        models = []
+        for pid in sorted(registry):
+            for mid in registry[pid].list_models():
+                models.append((pid, mid))
         if not models:
-            print("No models found. Install Ollama.")
+            print("No models available (check provider credentials).")
             return 1
 
-        print(f"CLAP - Models: {', '.join(models)}")
+        default_pid = "ollama-cloud" if "ollama-cloud" in registry else sorted(registry)[0]
+        default_model = default_model_for(registry, default_pid)
+        print(f"CLAP - {len(models)} models across {len(registry)} providers")
         print("Type 'quit' to exit.\n")
-        for i, m in enumerate(models, 1):
-            print(f"  {i}. {m}")
+        for i, (pid, mid) in enumerate(models, 1):
+            print(f"  {i}. {pid}/{mid}")
 
         try:
             idx = int(input("\nSelect model [1]: ") or "1") - 1
-            model = models[idx] if 0 <= idx < len(models) else models[0]
+            pid, model = models[idx] if 0 <= idx < len(models) else (default_pid, default_model)
         except (ValueError, EOFError):
-            model = models[0]
+            pid, model = default_pid, default_model
+        prov = registry[pid]
 
-        print(f"\nUsing: {model}\n")
+        print(f"\nUsing: {pid}/{model}\n")
         messages = []
         while True:
             try:
@@ -263,8 +299,7 @@ def interactive_mode():
                 messages.append({"role": "user", "content": user})
                 print("AI: ", end="", flush=True)
                 full = ""
-                for chunk in ollama_lib.chat(model=model, messages=messages, stream=True):
-                    text = chunk["message"]["content"]
+                for text in prov.chat(messages, model=model, stream=True):
                     print(text, end="", flush=True)
                     full += text
                 print()

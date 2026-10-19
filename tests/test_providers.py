@@ -119,8 +119,12 @@ def test_is_available(fake_server):
 def test_env_provider_discovered(monkeypatch, fake_server):
     monkeypatch.setenv("CLAP_ONLINE_BASE_URL", fake_server)
     monkeypatch.setenv("CLAP_ONLINE_API_KEY", "sk-env-key-987654321")
+    monkeypatch.delenv("CLAP_OLLAMA_LOCAL", raising=False)
     reg = discover_providers()
-    assert "ollama-local" in reg
+    # W2/W3: ollama defaults to the OpenAI-compatible cloud endpoint; the
+    # local daemon only appears with CLAP_OLLAMA_LOCAL=1.
+    assert "ollama-local" not in reg
+    assert "ollama-cloud" in reg
     assert "online" in reg
     assert reg["online"].base == fake_server
 
@@ -175,9 +179,13 @@ def test_fallback_raise_without_local(fake_server):
         FakeOpenAIHandler.fail_with = 0
 
 
-def test_discovery_masks_never_error():
-    """Registry discovery works on this machine without leaking errors."""
+def test_discovery_masks_never_error(monkeypatch):
+    """Registry discovery works on this machine without leaking key material."""
+    monkeypatch.delenv("CLAP_OLLAMA_LOCAL", raising=False)
     reg = discover_providers()
-    assert "ollama-local" in reg
+    assert "ollama-local" not in reg  # API-only by default (W3)
+    assert reg, "expected at least one configured provider"
     for pid, p in reg.items():
         assert pid and p.base
+        dumped = repr(p) + str(p)
+        assert "sk-" not in dumped

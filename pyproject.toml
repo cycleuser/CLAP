@@ -32,9 +32,10 @@ dependencies = [
 [project.optional-dependencies]
 rag = ["pypdf>=4.0.0", "python-docx>=0.8.11"]
 web = ["flask>=2.3.0"]
+zim = ["libzim>=3"]
 cli = ["rich>=13.0.0"]
 dev = ["pytest>=7.3.0", "ruff>=0.0.270", "build>=1.0.0"]
-all = ["clap-llm[rag,web,cli,dev]"]
+all = ["clap-llm[rag,web,zim,cli,dev]"]
 
 [project.urls]
 Homepage = "https://github.com/cycleuser/CLAP"
@@ -49,6 +50,8 @@ packages = ["clap", "clap.core", "clap.gui", "clap.cli", "clap.web", "clap.utils
 
 [tool.setuptools.package-data]
 "clap.gui" = ["assets/*.html"]
+"clap.web" = ["templates/*.html", "static/*"]
+"clap" = ["resources/*.json"]
 
 [tool.setuptools.dynamic]
 version = {attr = "clap.__version__"}

@@ -236,8 +236,45 @@ class OpenAICompatProvider(Provider):
 
 
 # --------------------------------------------------------------------------
-# discovery (three permitted key/config sources; keys stay in memory only)
+# discovery (W2/W3: unified OpenAI-compatible HTTP path + env assembler)
 # --------------------------------------------------------------------------
+
+# W3: the masked inventory is vendored INTO the repo (contains no keys), so
+# discovery never depends on a machine-external path.
+PROBE_LIST_BUNDLED = os.path.normpath(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "resources", "opencode_models.json")
+)
+
+# env var stem → provider identity in the inventory. The generic rule also
+# accepts any `<PROVIDER>_API_KEY` whose stem names a listed provider.
+ENV_PROVIDER_MAP = {
+    "DEEPSEEK": "deepseek",
+    "OLLAMA_CLOUD": "ollama-cloud",
+    "OLLAMA": "ollama-cloud",
+    "NVIDIA": "nvidia",
+    "NVIDIA_NIM": "nvidia",
+    "HF": "huggingface",
+    "HUGGINGFACE": "huggingface",
+    "MINIMAX": "minimax-cn",
+    "MINIMAX_CN": "minimax-cn",
+    "TENCENT": "tencent",
+    "TENCENT_CODING_PLAN": "tencent-coding-plan",
+    "TENCENT_TOKENHUB": "tencent-tokenhub",
+    "TENCENT_HY3": "hy3-preview",
+    "HY3": "hy3-preview",
+    "MOXING": "moxing",
+    "OPENCODE": "opencode",
+    "CYCLEUSER_HALOGEN": "cycleuser-halogen",
+    "HALOGEN": "cycleuser-halogen",
+    "CYCLEUSER_STRATA": "cycleuser-strata",
+    "STRATA": "cycleuser-strata",
+}
+
+_KEY_SUFFIXES = ("_API_KEY", "_TOKEN", "_KEY")
+
+# inventory entries that speak the Anthropic protocol — an OpenAI-compatible
+# client cannot talk to them, so they are surfaced as unsupported, not called.
+ANTHROPIC_STYLE = {"minimax-cn"}
 
 
 def _load_json(path: Path) -> dict:
@@ -248,52 +285,189 @@ def _load_json(path: Path) -> dict:
         return {}
 
 
-def discover_providers() -> dict[str, Provider]:
-    """Build the provider registry: local ollama + all configured online ends.
+def mask_secret(value: str) -> str:
+    """Display form of a credential: length + last 4 chars, never the value."""
+    if not value:
+        return "<none>"
+    tail = value[-4:] if len(value) >= 8 else "****"
+    return f"***len{len(value)}…{tail}"
 
-    Order: always `ollama-local`; then env CLAP_ONLINE_*; then opencode.json
-    providers; then pi models.json (+ auth.json keys). Unreachable/dup ids
-    are tolerated (later sources do not overwrite earlier ones).
+
+def load_probe_list(path: str | None = None) -> dict:
+    """Load the masked inventory {providers:[{id,baseURL}], models:[{providerID,modelID}]}.
+
+    Lookup order (W3): explicit path → env `CLAP_PROBE_LIST` → bundled copy.
+    Returns {"providers": {id: baseURL}, "models": {id: [modelID]}, "path": str|None}.
     """
-    providers: dict[str, Provider] = {"ollama-local": OllamaProvider()}
+    explicit = os.environ.get("CLAP_PROBE_LIST", "")
+    candidates = [path] if path else [explicit, PROBE_LIST_BUNDLED]
+    for cand in candidates:
+        if not cand or not os.path.exists(cand):
+            continue
+        try:
+            with open(cand, encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            continue
+        provs = {
+            p["id"]: p.get("baseURL", "")
+            for p in data.get("providers", [])
+            if isinstance(p, dict) and p.get("id")
+        }
+        models: dict[str, list[str]] = {}
+        for m in data.get("models", []):
+            pid = (m or {}).get("providerID", "")
+            mid = (m or {}).get("modelID", "")
+            if pid and mid:
+                models.setdefault(pid, []).append(mid)
+        return {"providers": provs, "models": models, "path": cand}
+    return {"providers": {}, "models": {}, "path": None}
 
-    # 1. env (generic)
+
+def env_key_candidates(environ: dict | None = None) -> list[tuple[str, str]]:
+    """Env vars shaped like credentials — NAMES returned with values held in
+    memory only (`*_API_KEY` / `*_TOKEN` / `*_KEY`, non-empty, len >= 8)."""
+    env = os.environ if environ is None else environ
+    out = []
+    for name, value in env.items():
+        upper = name.upper()
+        if upper == "CLAP_PROBE_LIST":
+            continue
+        if any(upper.endswith(suf) for suf in _KEY_SUFFIXES) and value and len(value) >= 8:
+            out.append((name, value))
+    return out
+
+
+def env_stem_provider(env_name: str, known_ids) -> str | None:
+    """Map an env var name to a provider identity present in the inventory."""
+    stem = env_name
+    for suf in _KEY_SUFFIXES:
+        if stem.upper().endswith(suf):
+            stem = stem[: -len(suf)]
+            break
+    upper = stem.upper()
+    if upper in ENV_PROVIDER_MAP and ENV_PROVIDER_MAP[upper] in known_ids:
+        return ENV_PROVIDER_MAP[upper]
+    for cand in (upper.lower().replace("_", "-"), upper.lower()):
+        if cand in known_ids:
+            return cand
+    return None
+
+
+class EnvAssembler:
+    """W2: register providers from env credentials via the vendored inventory."""
+
+    def __init__(self, probe: dict | None = None, environ: dict | None = None):
+        self.probe = probe if probe is not None else load_probe_list()
+        self.environ = os.environ if environ is None else environ
+        self.sources: dict[str, dict] = {}  # provider id -> masked display row
+        self.registered: dict[str, Provider] = {}
+
+    def _row(self, pid: str, base: str, env_name: str, masked: str, configured: bool, unsupported: str = "") -> dict:
+        return {
+            "provider": pid,
+            "base": base,
+            "env": env_name,  # NAME only
+            "masked": masked,  # never the value
+            "models": list(self.probe.get("models", {}).get(pid, [])),
+            "configured": configured,
+            "unsupported": unsupported,
+        }
+
+    def assemble(self) -> dict[str, Provider]:
+        """Returns provider id -> provider, plus masked rows in `self.sources`."""
+        registered: dict[str, Provider] = {}
+        base_by_id = self.probe.get("providers", {})
+        known = set(base_by_id)
+
+        for pid, base in base_by_id.items():
+            self.sources[pid] = self._row(pid, base, "", "<none>", False)
+
+        for env_name, value in env_key_candidates(self.environ):
+            pid = env_stem_provider(env_name, known)
+            if pid is None:
+                continue  # not an LLM identity in the inventory → ignored
+            if pid in self.sources and self.sources[pid]["configured"]:
+                self.sources[pid]["also_env"] = self.sources[pid].get("also_env", []) + [env_name]
+                continue  # first credential wins
+            if pid in ANTHROPIC_STYLE:
+                self.sources[pid] = self._row(
+                    pid, base_by_id[pid], env_name, mask_secret(value), True,
+                    unsupported="anthropic-protocol endpoint",
+                )
+                continue
+            prov = OpenAICompatProvider(pid, base_by_id[pid], value, f"{pid} (env)")
+            registered[pid] = prov
+            self.sources[pid] = self._row(pid, base_by_id[pid], env_name, prov.masked_key(), True)
+
+        self.registered = registered
+        return registered
+
+
+def discover_providers(probe_path: str | None = None) -> dict[str, Provider]:
+    """Build the unified provider registry (W2).
+
+    Every provider is an OpenAI-compatible HTTP endpoint. Sources (later ones
+    do not overwrite earlier ids):
+      1. env `CLAP_ONLINE_BASE_URL` (+`CLAP_ONLINE_API_KEY`) as "online";
+      2. env-assembled providers (W2 assembler via the vendored inventory);
+      3. `~/.config/opencode/opencode.json` providers;
+      4. `~/.pi/agent/models.json` (+ keys from `auth.json`);
+      5. ollama = `https://ollama.com/v1` (registered as `ollama-cloud`);
+      6. local ollama daemon, ONLY when `CLAP_OLLAMA_LOCAL=1`.
+    """
+    providers: dict[str, Provider] = {}
+    seen: set[str] = {""}
+
     env_base = os.environ.get("CLAP_ONLINE_BASE_URL", "")
-    env_key = os.environ.get("CLAP_ONLINE_API_KEY", "")
     if env_base:
-        providers.setdefault("online", OpenAICompatProvider("online", env_base, env_key, "env-configured online"))
+        providers["online"] = OpenAICompatProvider(
+            "online", env_base, os.environ.get("CLAP_ONLINE_API_KEY", ""), "env-configured online"
+        )
+        seen.add(env_base.rstrip("/"))
+
+    for pid, prov in EnvAssembler(load_probe_list(probe_path)).assemble().items():
+        providers.setdefault(pid, prov)
+        seen.add(prov.base.rstrip("/"))
 
     home = Path.home()
-    seen_bases: set[str] = {""}
-    seen_bases.add("http://127.0.0.1:11434")
-    seen_bases.add("http://127.0.0.1:11434/v1")  # ollama-local speaks the native api
-
-    # 2. opencode.json
     oc = _load_json(home / ".config" / "opencode" / "opencode.json")
     for pid, cfg in (oc.get("provider") or {}).items():
         opts = (cfg or {}).get("options") or {}
         base = opts.get("baseURL", "")
-        if not base or base.rstrip("/") in seen_bases:
+        if not base or base.rstrip("/") in seen:
             continue
-        seen_bases.add(base.rstrip("/"))
-        providers.setdefault(pid, OpenAICompatProvider(pid, base, opts.get("apiKey", ""), (cfg or {}).get("name", pid) or pid))
+        seen.add(base.rstrip("/"))
+        providers.setdefault(
+            pid, OpenAICompatProvider(pid, base, opts.get("apiKey", ""), (cfg or {}).get("name", pid) or pid)
+        )
 
-    # 3. pi models.json (+ auth.json for keys)
-    models = _load_json(home / ".pi" / "agent" / "models.json")
-    auth = _load_json(home / ".pi" / "agent" / "auth.json")
-    for pid, cfg in (models.get("providers") or {}).items():
+    pi_models = _load_json(home / ".pi" / "agent" / "models.json")
+    pi_auth = _load_json(home / ".pi" / "agent" / "auth.json")
+    local_enabled = os.environ.get("CLAP_OLLAMA_LOCAL", "") == "1"
+    for pid, cfg in (pi_models.get("providers") or {}).items():
         base = (cfg or {}).get("baseUrl", "")
-        if not base:
+        if not base or base.rstrip("/") in seen:
             continue
-        if base.rstrip("/") in seen_bases:
-            continue
-        seen_bases.add(base.rstrip("/"))
-        key = (auth.get(pid) or {}).get("key", "") or cfg.get("apiKey", "")
+        if pid == "ollama-local" and not local_enabled:
+            continue  # W2: the local daemon needs an explicit opt-in
+        seen.add(base.rstrip("/"))
+        key = (pi_auth.get(pid) or {}).get("key", "") or (cfg or {}).get("apiKey", "")
         providers.setdefault(pid, OpenAICompatProvider(pid, base, key, pid))
 
-    # the ollama/ollama-local native tag namespace never means an online provider
-    providers.pop("ollama", None)
+    if "ollama-cloud" not in providers:
+        providers["ollama-cloud"] = OpenAICompatProvider(
+            "ollama-cloud", "https://ollama.com/v1", (pi_auth.get("ollama-cloud") or {}).get("key", ""),
+            "ollama cloud",
+        )
 
+    if local_enabled:
+        providers.setdefault(
+            "ollama-local",
+            OpenAICompatProvider("ollama-local", "http://127.0.0.1:11434/v1", "", "ollama local daemon"),
+        )
+
+    providers.pop("ollama", None)
     return providers
 
 
@@ -303,6 +477,21 @@ def provider_from_names(registry: dict, provider_id: str | None) -> Provider:
     if provider_id:
         raise ProviderError(f"provider {provider_id!r} not configured (have: {sorted(registry)})")
     return registry.get("ollama-local") or next(iter(registry.values()))
+
+
+def default_model_for(registry: dict, provider_id: str) -> str:
+    """W3: no hardcoded default model — take one the provider actually lists.
+
+    The live `/models` answer wins (it reflects what the key can use today);
+    the vendored inventory is the offline fallback; empty string when neither
+    knows, so callers fail loudly instead of guessing a retired model id.
+    """
+    prov = registry.get(provider_id)
+    if prov is not None:
+        live = prov.list_models()
+        if live:
+            return live[0]
+    return (load_probe_list().get("models", {}).get(provider_id) or [""])[0]
 
 
 def masked_endpoint_table(registry: dict) -> list[dict]:

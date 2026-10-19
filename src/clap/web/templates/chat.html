@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light dark">
+<title>CLAP · 对话工作台</title>
+<style>{% include "app.css" %}</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand"><strong>CLAP</strong><span>Chat Local And Persistent · 对话工作台</span></div>
+    <select class="model-select" id="model" aria-label="模型（按 provider 分组）" title="模型（按 provider 分组）">
+      <option>正在探测模型…</option>
+    </select>
+    <nav class="nav">
+      <a href="/" class="on">对话</a>
+      <a href="/kb">知识库</a>
+      <a href="#" id="tl-link">时间轴</a>
+      <a href="/api-docs">接口</a>
+    </nav>
+  </header>
+
+  <div class="toolbar">
+    <label class="switch" title="开启后：先检索 ZIM 材料，再闭世界作答，并逐句审计依据度">
+      <input type="checkbox" id="grounded">
+      <span class="track"></span><span class="lbl">有依据模式</span>
+    </label>
+    <div class="zim-picker">
+      <button class="chip" id="zim-btn" type="button">ZIM：全部 <span id="zim-count"></span></button>
+      <div class="menu" id="zim-menu"></div>
+    </div>
+    <span class="sep"></span>
+    <div class="group" id="branch-bar"><span class="chip on">分支加载中…</span></div>
+    <span class="sep"></span>
+    <div class="group">
+      <button class="btn ghost small" id="btn-export" type="button">导出</button>
+      <button class="btn ghost small" id="btn-share" type="button">分享</button>
+      <button class="btn ghost small" id="btn-renew" type="button">续期</button>
+      <button class="btn ghost small" id="btn-new" type="button">新会话</button>
+    </div>
+    <span class="spacer"></span>
+    <span class="status" id="status">就绪</span>
+  </div>
+
+  <main class="workspace">
+    <div class="chat-col">
+      <section class="panel flow" id="flow" aria-live="polite" aria-label="消息流">
+        <p class="empty">还没有消息。选好模型后输入问题，按 Enter 发送。</p>
+      </section>
+
+      <section class="panel composer">
+        <textarea id="input" placeholder="输入消息…（Enter 发送，Shift+Enter 换行）" aria-label="消息输入"></textarea>
+        <div class="composer-row">
+          <button class="btn" id="send">发送</button>
+          <button class="btn stop" id="stop" style="display:none">暂停</button>
+          <span class="status" id="mode-line">普通对话</span>
+          <span class="spacer"></span>
+          <span class="status" id="sess-line">会话 —</span>
+        </div>
+      </section>
+    </div>
+
+    <aside class="side">
+      <section class="panel card">
+        <h2>会话 <span class="hint">v2 · 分支 · 标注</span></h2>
+        <dl class="kv" id="sess-kv"><dt>状态</dt><dd>加载中…</dd></dl>
+        <div class="field" style="margin-top:10px">
+          <label for="sess-path">保存 / 加载路径（.clap 文件）</label>
+          <input id="sess-path" placeholder="/绝对路径/session.clap">
+        </div>
+        <div class="composer-row">
+          <button class="btn ghost small" id="save-sess">保存</button>
+          <button class="btn ghost small" id="load-sess">加载</button>
+        </div>
+      </section>
+
+      <section class="panel card">
+        <h2>分支 <span class="hint">点消息头的「分叉」</span></h2>
+        <div class="branch-bar" id="branch-list"></div>
+        <p class="empty" id="branch-empty">只有一个主线分支</p>
+      </section>
+
+      <section class="panel card">
+        <h2>标注 <span class="hint">F5 · 结构化标注</span></h2>
+        <form id="ann-form" autocomplete="off">
+          <div class="field">
+            <label for="ann-target">消息 id（点消息头可自动填入）</label>
+            <input id="ann-target" placeholder="如 m3">
+          </div>
+          <div class="field">
+            <label for="ann-kind">类型</label>
+            <select id="ann-kind">
+              <option value="keypoint">重点</option>
+              <option value="question">疑问</option>
+              <option value="generated">生成</option>
+              <option value="reviewed">讲评</option>
+              <option value="error_fix">纠错</option>
+              <option value="knowledge_point">知识点</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="ann-tags">标签（逗号分隔）</label>
+            <input id="ann-tags" placeholder="兼语句,语法">
+          </div>
+          <div class="field">
+            <label for="ann-note">备注</label>
+            <textarea id="ann-note"></textarea>
+          </div>
+          <div class="field">
+            <label for="ann-author">标注人</label>
+            <input id="ann-author" value="teacher">
+          </div>
+          <div class="composer-row">
+            <button class="btn small" type="submit">写入标注</button>
+            <button class="btn ghost small" type="button" id="ann-export">导出 CSV</button>
+          </div>
+        </form>
+        <div class="ann-list" id="ann-list"></div>
+      </section>
+
+      <section class="panel card">
+        <h2>知识库 <span class="hint">ZIM 外置库</span></h2>
+        <dl class="kv" id="zim-kv"><dt>加载中</dt><dd>…</dd></dl>
+        <div class="actions" style="margin-top:8px">
+          <a class="btn ghost small" href="/kb">打开知识库</a>
+        </div>
+      </section>
+    </aside>
+  </main>
+
+  <footer class="footer">
+    <span>密钥只在内存中读取，界面与接口只显示掩码。</span>
+    <span>有依据模式：检索 ZIM → 闭世界作答 → 逐句审计。</span>
+    <span><a href="/api-docs">接口清单 →</a></span>
+  </footer>
+</div>
+
+<!-- source drawer -->
+<aside class="drawer" id="drawer" aria-label="来源原文">
+  <header>
+    <h3 id="drawer-title">来源</h3>
+    <button class="icon-btn" id="drawer-close" title="关闭">×</button>
+  </header>
+  <div class="content" id="drawer-body"></div>
+</aside>
+
+<!-- generic modal -->
+<div class="modal" id="modal">
+  <div class="box">
+    <header><h3 id="modal-title">结果</h3><button class="icon-btn" id="modal-close" title="关闭">×</button></header>
+    <div class="body" id="modal-body"></div>
+    <footer id="modal-foot"></footer>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const flow = $("flow");
+  const input = $("input");
+  const sendBtn = $("send");
+  const stopBtn = $("stop");
+  const modelSel = $("model");
+  const statusEl = $("status");
+  const groundedEl = $("grounded");
+
+  const KIND_ZH = {
+    keypoint: "重点", question: "疑问", generated: "生成",
+    reviewed: "讲评", error_fix: "纠错", knowledge_point: "知识点"
+  };
+
+  let currentStream = null;
+  let turnNo = 0;
+  let branchId = "";
+  let zimList = [];
+  let zimFilter = [];        // empty = all
+  let renewSummary = "";     // set by 续期, cleared after next send
+  let lastMessages = [];
+  let pausedFlag = false;
+
+  function setStatus(text, bad) {
+    statusEl.textContent = text;
+    statusEl.className = "status" + (bad ? " bad" : "");
+  }
+  function toast(text) {
+    const t = $("toast");
+    t.textContent = text;
+    t.classList.add("show");
+    clearTimeout(t._tm);
+    t._tm = setTimeout(() => t.classList.remove("show"), 2600);
+  }
+  function el(tag, cls, text) {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined) n.textContent = text;
+    return n;
+  }
+  function esc(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  // ---------------- citation rendering ----------------
+  const CITE_RE = /\[(\d+(?:\s*[,，]\s*\d+)*)\]/g;
+  function renderRich(node, text) {
+    node.innerHTML = esc(text).replace(CITE_RE, (m, nums) => {
+      const list = nums.split(/[,，]/).map((s) => s.trim()).join(",");
+      return '<span class="cite" data-n="' + esc(list) + '" title="点击查看来源原文">[' + esc(nums) + ']</span>';
+    });
+    node.querySelectorAll(".cite").forEach((c) => {
+      c.addEventListener("click", () => openSourceByNumber(c.dataset.n));
+    });
+  }
+
+  // ---------------- source drawer ----------------
+  function openSourceByNumber(nums) {
+    const n = String(nums).split(",")[0].trim();
+    const msg = lastMessages.find((m) => (m.sources || []).some((s) => String(s.n) === n));
+    const src = msg && (msg.sources || []).find((s) => String(s.n) === n);
+    if (!src) { toast("没有找到来源 " + n); return; }
+    openSource(src.zim, src.path, src.title);
+  }
+  async function openSource(zim, path, title) {
+    const drawer = $("drawer");
+    $("drawer-title").textContent = title || path;
+    $("drawer-body").textContent = "加载中…";
+    drawer.classList.add("open");
+    try {
+      const r = await fetch("/api/zim/article?zim=" + encodeURIComponent(zim) + "&path=" + encodeURIComponent(path));
+      const j = await r.json();
+      if (!j.success) throw new Error(j.error || "读取失败");
+      $("drawer-title").textContent = j.title || title || path;
+      const meta = el("div", "meta", j.zim + " · " + j.path + " · " + j.chars + " 字");
+      const body = el("div", "body", j.text);
+      const wrap = $("drawer-body");
+      wrap.innerHTML = "";
+      wrap.appendChild(meta);
+      wrap.appendChild(body);
+    } catch (e) {
+      $("drawer-body").textContent = "读取失败：" + e.message;
+    }
+  }
+  $("drawer-close").addEventListener("click", () => $("drawer").classList.remove("open"));
+
+  // ---------------- modal ----------------
+  function openModal(title, bodyNode, footNodes) {
+    $("modal-title").textContent = title;
+    const body = $("modal-body");
+    body.innerHTML = "";
+    body.appendChild(bodyNode);
+    const foot = $("modal-foot");
+    foot.innerHTML = "";
+    (footNodes || []).forEach((n) => foot.appendChild(n));
+    $("modal").classList.add("open");
+  }
+  function closeModal() { $("modal").classList.remove("open"); }
+  $("modal-close").addEventListener("click", closeModal);
+  $("modal").addEventListener("click", (e) => { if (e.target === $("modal")) closeModal(); });
+
+  // ---------------- models ----------------
+  async function loadModels() {
+    try {
+      const r = await fetch("/api/models");
+      const j = await r.json();
+      if (!j.success) throw new Error(j.error || "接口返回失败");
+      modelSel.innerHTML = "";
+      const available = (j.groups || []).filter((g) => g.available && !g.unsupported);
+      const unavailable = (j.groups || []).filter((g) => !g.available || g.unsupported);
+
+      available.forEach((g) => {
+        const og = document.createElement("optgroup");
+        og.label = g.provider + (g.env ? "（env " + g.env + "）" : "");
+        g.models.forEach((mid) => {
+          const o = document.createElement("option");
+          o.value = g.provider + "\u0000" + mid;
+          o.textContent = mid;
+          og.appendChild(o);
+        });
+        modelSel.appendChild(og);
+      });
+      if (unavailable.length) {
+        const og = document.createElement("optgroup");
+        og.label = "未配置 / 不可用（不发起调用）";
+        unavailable.forEach((g) => {
+          const o = document.createElement("option");
+          o.disabled = true;
+          o.textContent = g.provider + " — " + (g.unsupported ? "协议不支持" : (g.configured ? "连接失败" : "未配置"));
+          og.appendChild(o);
+        });
+        modelSel.appendChild(og);
+      }
+      const def = j.default || {};
+      const wanted = def.provider + "\u0000" + def.model;
+      if ([...modelSel.options].some((o) => o.value === wanted)) modelSel.value = wanted;
+      if (!available.length) setStatus("没有可用 provider，请配置环境变量凭证", true);
+    } catch (e) {
+      modelSel.innerHTML = "<option>模型探测失败</option>";
+      setStatus("模型探测失败：" + e.message, true);
+    }
+  }
+
+  function selected() {
+    const v = modelSel.value || "";
+    const i = v.indexOf("\u0000");
+    if (i < 0) return { provider: "", model: "" };
+    return { provider: v.slice(0, i), model: v.slice(i + 1) };
+  }
+
+  // ---------------- ZIM ----------------
+  async function loadZims() {
+    try {
+      const r = await fetch("/api/zim/list");
+      const j = await r.json();
+      zimList = (j.zims || []);
+      $("zim-count").textContent = zimList.length ? "（" + zimList.length + "）" : "（无）";
+      const kv = $("zim-kv");
+      kv.innerHTML = "";
+      if (!zimList.length) {
+        kv.appendChild(el("dt", "", "状态"));
+        kv.appendChild(el("dd", "", "未发现 .zim（检查 CLAP_ZIM_ROOTS）"));
+      } else {
+        zimList.forEach((z) => {
+          kv.appendChild(el("dt", "", z.name.replace(/\.zim$/i, "")));
+          kv.appendChild(el("dd", "", z.error ? ("无法读取：" + z.error) : (z.entries.toLocaleString() + " 条 · " + z.size_mb + " MB")));
+        });
+      }
+      const menu = $("zim-menu");
+      menu.innerHTML = "";
+      menu.appendChild(el("div", "muted", "选择参与检索的库（不选 = 全部）"));
+      zimList.forEach((z) => {
+        const lab = document.createElement("label");
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.value = z.name;
+        cb.addEventListener("change", () => {
+          zimFilter = [...menu.querySelectorAll("input:checked")].map((x) => x.value);
+          $("zim-btn").innerHTML = "ZIM：" + (zimFilter.length ? zimFilter.map((n) => n.replace(/\.zim$/i, "")).join("、") : "全部") +
+            ' <span id="zim-count">（' + zimList.length + "）</span>";
+        });
+        lab.appendChild(cb);
+        lab.appendChild(el("span", "", z.name.replace(/\.zim$/i, "") + " · " + z.entries.toLocaleString() + " 条"));
+        menu.appendChild(lab);
+      });
+    } catch (e) {
+      setStatus("ZIM 探测失败：" + e.message, true);
+    }
+  }
+  $("zim-btn").addEventListener("click", (e) => {
+    e.stopPropagation();
+    $("zim-menu").classList.toggle("open");
+  });
+  document.addEventListener("click", (e) => {
+    if (!$("zim-menu").contains(e.target) && e.target !== $("zim-btn")) $("zim-menu").classList.remove("open");
+  });
+
+  // ---------------- message rendering ----------------
+  function badge(kind) {
+    const b = el("span", "badge k-" + kind, KIND_ZH[kind] || kind);
+    b.title = "标注：" + (KIND_ZH[kind] || kind);
+    return b;
+  }
+
+  function msgNode(m, anns) {
+    const role = m.role === "user" ? "user" : (m.role === "system" ? "system" : "assistant");
+    const wrap = el("article", "msg " + role);
+
+    const head = el("div", "msg-head");
+    if (role === "user") turnNo += 1;
+    head.appendChild(el("span", "turn", "#" + (role === "user" ? turnNo : Math.max(turnNo, 1))));
+    head.appendChild(el("span", "who", role === "user" ? "教师" : (role === "system" ? "系统" : "助手")));
+    if (m.provider || m.model) {
+      head.appendChild(el("span", "prov", (m.provider || "?") + " · " + (m.model || "?")));
+    }
+    if (m.latency_ms != null) head.appendChild(el("span", "", m.latency_ms + " ms"));
+    if (m.tokens && m.tokens.out != null) head.appendChild(el("span", "", "输出 " + m.tokens.out + " tok"));
+    if (m.error === "cancelled") head.appendChild(el("span", "paused-tag", "已暂停"));
+    if (m.id) {
+      const idEl = el("span", "mid", m.id);
+      idEl.title = "点击填入标注目标";
+      idEl.style.cursor = "pointer";
+      idEl.addEventListener("click", () => {
+        $("ann-target").value = m.id;
+        $("ann-target").focus();
+      });
+      head.appendChild(idEl);
+      const forkBtn = el("button", "src-btn", "分叉");
+      forkBtn.type = "button";
+      forkBtn.title = "从这条消息分出新分支";
+      forkBtn.addEventListener("click", () => forkAt(m.id));
+      head.appendChild(forkBtn);
+    }
+    if (anns && anns.length) {
+      const bs = el("span", "badges");
+      anns.forEach((a) => bs.appendChild(badge(a.kind)));
+      head.appendChild(bs);
+    }
+    wrap.appendChild(head);
+
+    const bubble = el("div", "bubble" + (m.error ? " err" : ""), "");
+    if (m.role === "system") bubble.style.opacity = ".72";
+    renderRich(bubble, m.content || "");
+    wrap.appendChild(bubble);
+    if (m.error && m.error !== "cancelled") wrap.appendChild(el("div", "err-text", "调用失败：" + m.error));
+
+    // evidence footer
+    const audit = m.audit || null;
+    const sources = m.sources || [];
+    if (audit) {
+      const pct = Math.round((audit.score || 0) * 100);
+      const ev = el("div", "evidence");
+      const pill = el("span", "audit-pill" + (pct < 60 ? " warn" : ""),
+        "依据度 " + pct + "% · " + (audit.sentences_grounded || 0) + "/" + (audit.sentences_total || 0) + " 句有据" +
+        (audit.sentences_unverified ? " · " + audit.sentences_unverified + " 句跨语言未核验" : ""));
+      ev.appendChild(pill);
+      if ((audit.sentences || []).some((s) => !s.grounded)) {
+        const b = el("button", "src-btn", "查看无据句");
+        b.type = "button";
+        b.addEventListener("click", () => showAudit(audit));
+        ev.appendChild(b);
+      }
+      wrap.appendChild(ev);
+    }
+    if (sources.length) {
+      const ev = el("div", "evidence");
+      sources.forEach((s) => {
+        const b = el("button", "src-btn", "[" + s.n + "] " + (s.title || s.path).slice(0, 28) + (s.title && s.title.length > 28 ? "…" : ""));
+        b.type = "button";
+        b.title = s.zim + " · " + s.path;
+        b.addEventListener("click", () => openSource(s.zim, s.path, s.title));
+        ev.appendChild(b);
+      });
+      wrap.appendChild(ev);
+    }
+    return { wrap, bubble };
+  }
+
+  function showAudit(audit) {
+    const box = el("div", "");
+    (audit.sentences || []).forEach((s) => {
+      const row = el("div", "ann-item");
+      row.style.cursor = "default";
+      row.appendChild(el("span", "badge" + (s.grounded ? "" : " k-error_fix"), s.grounded ? "有据" : "无据"));
+      row.appendChild(el("span", "", s.text));
+      row.appendChild(el("span", "n", s.reason || ""));
+      box.appendChild(row);
+    });
+    openModal("逐句审计（依据度 " + Math.round((audit.score || 0) * 100) + "%）", box, []);
+  }
+
+  // ---------------- session ----------------
+  async function loadSession(branch) {
+    try {
+      const q = branch ? ("?branch=" + encodeURIComponent(branch)) : "";
+      const r = await fetch("/api/session/get" + q);
+      const j = await r.json();
+      if (!j.success) return;
+      turnNo = 0;
+      branchId = j.branch_id || "";
+      lastMessages = j.messages || [];
+      flow.innerHTML = "";
+      if (!lastMessages.length) {
+        flow.appendChild(el("p", "empty", "还没有消息。选好模型后输入问题，按 Enter 发送。"));
+      }
+      lastMessages.forEach((m) => {
+        const anns = (j.annotations || []).filter((a) => a.target === m.id);
+        flow.appendChild(msgNode(m, anns).wrap);
+      });
+      flow.scrollTop = flow.scrollHeight;
+
+      const kv = $("sess-kv");
+      kv.innerHTML = "";
+      const rows = [
+        ["会话", j.session_id],
+        ["消息", lastMessages.length + " 条"],
+        ["标注", (j.annotations || []).length + " 条"],
+        ["分支", (j.branches || []).length + " 个"]
+      ];
+      rows.forEach(([k, v]) => { kv.appendChild(el("dt", "", k)); kv.appendChild(el("dd", "", v)); });
+      $("sess-line").textContent = "会话 " + j.session_id + " · " + lastMessages.length + " 条";
+
+      const bar = $("branch-bar");
+      bar.innerHTML = "";
+      (j.branches || []).forEach((b) => {
+        const pill = el("button", "branch-pill" + (b.id === branchId ? " on" : ""), b.name || b.id);
+        pill.type = "button";
+        pill.appendChild(el("small", "", "· " + (b.turns || 0) + " 问"));
+        pill.addEventListener("click", () => loadSession(b.id));
+        bar.appendChild(pill);
+      });
+
+      const bl = $("branch-list");
+      bl.innerHTML = "";
+      if (!(j.branches || []).length) {
+        $("branch-empty").style.display = "";
+      } else {
+        $("branch-empty").style.display = "none";
+      }
+
+      const list = $("ann-list");
+      list.innerHTML = "";
+      if (!(j.annotations || []).length) list.appendChild(el("p", "empty", "暂无标注"));
+      (j.annotations || []).forEach((a) => {
+        const it = el("div", "ann-item");
+        it.appendChild(badge(a.kind));
+        it.appendChild(el("span", "t", a.target));
+        if ((a.tags || []).length) it.appendChild(el("span", "", (a.tags || []).join("、")));
+        if (a.note) it.appendChild(el("span", "n", a.note));
+        list.appendChild(it);
+      });
+      $("mode-line").textContent = groundedEl.checked ? "有依据模式" : "普通对话";
+    } catch (e) {
+      setStatus("会话加载失败：" + e.message, true);
+    }
+  }
+
+  groundedEl.addEventListener("change", () => {
+    $("mode-line").textContent = groundedEl.checked ? "有依据模式（先检索 ZIM，再闭世界作答）" : "普通对话";
+  });
+
+  // ---------------- chat ----------------
+  async function send() {
+    const text = input.value.trim();
+    if (!text) return;
+    const sel = selected();
+    if (!sel.provider) { setStatus("请先选择一个可用模型", true); return; }
+
+    input.value = "";
+    sendBtn.disabled = true;
+    stopBtn.style.display = "";
+    stopBtn.disabled = false;
+    pausedFlag = false;
+    setStatus(groundedEl.checked ? "检索材料并生成…" : "正在生成…");
+
+    const userNode = msgNode({ role: "user", content: text, id: "" }, []).wrap;
+    const ai = msgNode({ role: "assistant", content: "", provider: sel.provider, model: sel.model, id: "" }, []);
+    if (flow.querySelector(".empty")) flow.innerHTML = "";
+    flow.appendChild(userNode);
+    flow.appendChild(ai.wrap);
+    flow.scrollTop = flow.scrollHeight;
+
+    const payload = {
+      message: text,
+      provider: sel.provider,
+      model: sel.model,
+      branch: branchId || undefined
+    };
+    if (groundedEl.checked) {
+      payload.grounded = true;
+      if (zimFilter.length) payload.zims = zimFilter;
+      payload.top_k = 6;
+    }
+    if (renewSummary) { payload.renew_summary = renewSummary; }
+
+    let sources = [];
+    let audit = null;
+    try {
+      const resp = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (!resp.ok && (resp.headers.get("content-type") || "").includes("json")) {
+        const j = await resp.json();
+        throw new Error(j.error || ("HTTP " + resp.status));
+      }
+      const reader = resp.body.getReader();
+      const dec = new TextDecoder();
+      let buf = "";
+      let acc = "";
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const chunks = buf.split("\n\n");
+        buf = chunks.pop();
+        for (const chunk of chunks) {
+          const line = chunk.trim();
+          if (!line.startsWith("data:")) continue;
+          const evt = JSON.parse(line.slice(5).trim());
+          if (evt.start) currentStream = evt.stream_id;
+          if (evt.sources) sources = evt.sources;
+          if (evt.delta) {
+            acc += evt.delta;
+            ai.bubble.textContent = acc;
+            flow.scrollTop = flow.scrollHeight;
+          }
+          if (evt.done) {
+            const m = evt.meta || {};
+            audit = m.audit || null;
+            sources = m.sources || sources;
+            if (m.error === "cancelled") {
+              pausedFlag = true;
+              if (!ai.wrap.querySelector(".paused-tag")) {
+                ai.wrap.querySelector(".msg-head").appendChild(el("span", "paused-tag", "已暂停"));
+              }
+              setStatus("已暂停 · 已保留已生成内容");
+            } else if (m.error) {
+              ai.bubble.classList.add("err");
+              ai.wrap.appendChild(el("div", "err-text", "调用失败：" + m.error));
+              setStatus("请求结束（有错误）", true);
+            } else {
+              setStatus("完成 · " + m.latency_ms + " ms" + (audit ? " · 依据度 " + Math.round(audit.score * 100) + "%" : ""));
+            }
+          }
+        }
+      }
+    } catch (e) {
+      ai.bubble.classList.add("err");
+      ai.wrap.appendChild(el("div", "err-text", "请求失败：" + e.message));
+      setStatus("请求失败：" + e.message, true);
+    } finally {
+      currentStream = null;
+      sendBtn.disabled = false;
+      stopBtn.style.display = "none";
+      if (renewSummary && !pausedFlag) renewSummary = "";
+      await loadSession(branchId);
+    }
+  }
+
+  sendBtn.addEventListener("click", send);
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+  });
+
+  stopBtn.addEventListener("click", async () => {
+    stopBtn.disabled = true;
+    setStatus("正在暂停…");
+    try {
+      await fetch("/api/chat/stop", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stream_id: currentStream || "" })
+      });
+    } catch (e) { /* stream teardown reports */ }
+  });
+
+  // ---------------- lifecycle actions ----------------
+  $("btn-new").addEventListener("click", async () => {
+    await fetch("/api/session/new", { method: "POST" });
+    renewSummary = "";
+    await loadSession();
+    setStatus("已新建会话");
+  });
+
+  $("btn-export").addEventListener("click", () => {
+    const wrap = el("div", "");
+    const row = el("div", "composer-row");
+    const sel = document.createElement("select");
+    sel.style.cssText = "font:inherit;padding:7px 10px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink)";
+    [["md", "Markdown"], ["html", "HTML（零外链）"], ["json", "JSON"]].forEach(([v, t]) => {
+      const o = document.createElement("option"); o.value = v; o.textContent = t; sel.appendChild(o);
+    });
+    const path = document.createElement("input");
+    path.placeholder = "保存路径（可空，留空只预览）";
+    path.style.cssText = "flex:1;min-width:220px;font:inherit;padding:7px 10px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink)";
+    const pre = el("pre", "");
+    pre.textContent = "选择格式后点「生成」";
+    row.appendChild(sel); row.appendChild(path);
+    wrap.appendChild(row);
+    wrap.appendChild(pre);
+
+    const gen = el("button", "btn small", "生成");
+    gen.type = "button";
+    gen.addEventListener("click", async () => {
+      gen.disabled = true;
+      try {
+        const r = await fetch("/api/session/export", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ format: sel.value, branch: branchId || undefined, path: path.value.trim() || undefined })
+        });
+        const j = await r.json();
+        if (!j.success) throw new Error(j.error || "导出失败");
+        pre.textContent = j.content || ("已保存到 " + j.path);
+        toast(j.path ? ("已保存 → " + j.path) : ("已生成 " + j.chars + " 字符"));
+      } catch (e) {
+        pre.textContent = "导出失败：" + e.message;
+      } finally {
+        gen.disabled = false;
+      }
+    });
+    const copy = el("button", "btn ghost small", "复制");
+    copy.type = "button";
+    copy.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(pre.textContent); toast("已复制"); }
+      catch (e) { toast("复制失败：" + e.message); }
+    });
+    openModal("导出会话", wrap, [copy, gen]);
+  });
+
+  $("btn-share").addEventListener("click", async () => {
+    try {
+      const r = await fetch("/api/session/share", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: "{}"
+      });
+      const j = await r.json();
+      if (!j.success) throw new Error(j.error || "分享失败");
+      const box = el("div", "");
+      box.appendChild(el("p", "", "已生成分享包（不含任何密钥与本地路径）："));
+      const pre = el("pre", ""); pre.textContent = j.package + "\n" + (j.size || 0) + " 字节";
+      box.appendChild(pre);
+      const note = el("p", "", "对方在「知识库 → 导入分享包」或 POST /api/session/adopt 里导入即可。");
+      note.style.cssText = "color:var(--ink-soft);font-size:14px;margin-top:8px";
+      box.appendChild(note);
+      openModal("分享包已生成", box, []);
+      toast("分享包已生成");
+    } catch (e) {
+      setStatus("分享失败：" + e.message, true);
+    }
+  });
+
+  $("btn-renew").addEventListener("click", async () => {
+    try {
+      const r = await fetch("/api/session/renew", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ branch: branchId || undefined })
+      });
+      const j = await r.json();
+      if (!j.success) throw new Error(j.error || "续期失败");
+      renewSummary = j.summary;
+      const box = el("div", "");
+      box.appendChild(el("p", "", "已生成续期摘要：下一条消息将自动携带它，并丢弃冗余上下文。"));
+      const meta = el("p", "",
+        "消息 " + j.messages + " 条 · 约 " + j.est_tokens_before + " → " + j.est_tokens_after + " tokens");
+      meta.style.cssText = "color:var(--ink-soft);font-size:13.5px;margin:6px 0 10px";
+      box.appendChild(meta);
+      const pre = el("pre", ""); pre.textContent = j.summary;
+      box.appendChild(pre);
+      openModal("会话续期", box, []);
+      toast("续期摘要已就绪，下一条消息自动携带");
+      setStatus("续期就绪（下一条消息携带摘要）");
+    } catch (e) {
+      setStatus("续期失败：" + e.message, true);
+    }
+  });
+
+  async function forkAt(msgId) {
+    const name = prompt("新分支名称（可空）", "");
+    try {
+      const r = await fetch("/api/session/fork", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ at: msgId, name: name || "", note: "" })
+      });
+      const j = await r.json();
+      if (!j.success) throw new Error(j.error || "分叉失败");
+      toast("已分叉：" + j.branch.id);
+      await loadSession(j.branch.id);
+    } catch (e) {
+      setStatus("分叉失败：" + e.message, true);
+    }
+  }
+
+  $("save-sess").addEventListener("click", async () => {
+    const p = $("sess-path").value.trim();
+    if (!p) { setStatus("请先填写保存路径", true); return; }
+    const r = await fetch("/api/session/save", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: p })
+    });
+    const j = await r.json();
+    setStatus(j.success ? "已保存到 " + j.path : "保存失败：" + j.error, !j.success);
+  });
+
+  $("load-sess").addEventListener("click", async () => {
+    const p = $("sess-path").value.trim();
+    if (!p) { setStatus("请先填写加载路径", true); return; }
+    const r = await fetch("/api/session/load", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: p })
+    });
+    const j = await r.json();
+    setStatus(j.success ? "已加载 " + j.path : "加载失败：" + j.error, !j.success);
+    if (j.success) await loadSession();
+  });
+
+  // ---------------- annotations ----------------
+  $("ann-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const target = $("ann-target").value.trim();
+    if (!target) { setStatus("请填写标注目标消息 id", true); return; }
+    const body = {
+      target,
+      kind: $("ann-kind").value,
+      tags: $("ann-tags").value.split(",").map((s) => s.trim()).filter(Boolean),
+      note: $("ann-note").value.trim(),
+      author: $("ann-author").value.trim() || "teacher"
+    };
+    const r = await fetch("/api/annotate", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
+    });
+    const j = await r.json();
+    if (j.success) {
+      setStatus("已标注 " + j.annotation.target + "（" + (KIND_ZH[j.annotation.kind] || j.annotation.kind) + "）");
+      $("ann-note").value = "";
+      await loadSession(branchId);
+    } else {
+      setStatus("标注失败：" + j.error, true);
+    }
+  });
+
+  $("ann-export").addEventListener("click", async () => {
+    const p = $("sess-path").value.trim();
+    const out = p ? p.replace(/\.clap$/i, "") + ".annotations.csv" : "";
+    if (!out) { setStatus("先在会话卡片填写一个 .clap 路径，导出文件会放在它旁边", true); return; }
+    const r = await fetch("/api/annotate/export", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: out, format: "csv" })
+    });
+    const j = await r.json();
+    setStatus(j.success ? "已导出 " + j.rows + " 条 → " + j.path : "导出失败：" + j.error, !j.success);
+  });
+
+  $("tl-link").addEventListener("click", async (e) => {
+    e.preventDefault();
+    let p = $("sess-path").value.trim();
+    if (!p) {
+      p = "/tmp/clap-session-" + Date.now() + ".clap";
+      const r = await fetch("/api/session/save", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: p })
+      });
+      const j = await r.json();
+      if (!j.success) { setStatus("时间轴导出失败：" + j.error, true); return; }
+    }
+    window.open("/timeline?file=" + encodeURIComponent(p), "_blank", "noopener");
+  });
+
+  loadModels().then(() => Promise.all([loadSession(), loadZims()]));
+})();
+</script>
+</body>
+</html>
