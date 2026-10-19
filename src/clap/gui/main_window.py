@@ -50,6 +50,9 @@ class MainWindow(QMainWindow):
         self.current_response: str = ""
         self.response_browser: QTextBrowser | None = None
         self.history_path = Path.home() / ".clap" / "history.json"
+        # session v2 state (source of truth); `messages` is the linear view
+        self.session: dict | None = None
+        self.active_branch: str | None = None
 
         self.setWindowTitle(t("app_name"))
         self.setMinimumSize(1200, 800)
@@ -376,6 +379,8 @@ class MainWindow(QMainWindow):
     def new_chat(self):
         """Start a new chat session."""
         self.save_history()
+        self.session = None
+        self.active_branch = None
         self.messages.clear()
         self.current_response = ""
         self.chat_browser.clear()
@@ -386,7 +391,7 @@ class MainWindow(QMainWindow):
         self.chat_browser.clear()
 
     def save_chat_to_file(self):
-        """Save current conversation to a file."""
+        """Save current conversation to a file (thin shell over session.py)."""
         if not self.messages:
             QMessageBox.information(self, t("info"), t("no_conversation"))
             return
@@ -400,44 +405,62 @@ class MainWindow(QMainWindow):
         if not path.endswith((".clap", ".json")):
             path += ".clap"
 
-        data = {
-            "version": "1.0",
-            "timestamp": datetime.now().isoformat(),
-            "model": self.config.chat_model,
-            "embed_model": self.config.embed_model,
-            "document": self.current_file,
-            "messages": self.messages,
-            "language": self.config.language,
-        }
+        from clap.core import session as session_mod
 
         try:
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
+            if self.session is None:
+                self.session = self._make_session()
+                parent = None
+                for m in self.messages:
+                    node = session_mod.append_message(
+                        self.session, m.get("role", "user"), m.get("content", ""),
+                        parent=parent, branch_id=self.active_branch,
+                        model=m.get("model"), provider=m.get("provider"),
+                        latency_ms=m.get("latency_ms"), tokens=m.get("tokens"),
+                        error=m.get("error"),
+                    )
+                    parent = node["id"]
+                session_mod.ensure_main_branch(self.session)
+            session_mod.save_session(self.session, path)
             self.status_bar.showMessage(f"{t('saved')}: {os.path.basename(path)}")
         except Exception as e:
             QMessageBox.warning(self, t("error"), f"{t('failed_save')}: {e}")
 
     def load_chat_from_file(self):
-        """Load conversation from a file."""
+        """Load conversation from a file (thin shell over session.py; v1 is
+        migrated to v2 transparently)."""
         path, _ = QFileDialog.getOpenFileName(
             self, t("load_conversation"), "", "CLAP Chat (*.clap);;JSON (*.json);;All Files (*)"
         )
         if not path:
             return
 
+        from clap.core import session as session_mod
+
         try:
-            with open(path, encoding="utf-8") as f:
-                data = json.load(f)
+            s = session_mod.load_session(path)
+            self.session = s
+            main = session_mod.main_branch(s)
+            self.active_branch = main.get("id")
+            self.messages = session_mod.branch_path(s, self.active_branch or "b1")
+            if not self.messages:  # empty session: view may be empty list
+                self.messages = []
 
-            self.messages = data.get("messages", [])
-            self.current_file = data.get("document", "")
+            try:
+                doc_path = (s.get("manifest", {}).get("document") or {}).get("path", "")
+                legacy_doc = s.get("manifest", {}).get("document", {}).get("name", "")
+                self.current_file = doc_path if doc_path and os.path.exists(doc_path) else (
+                    legacy_doc if legacy_doc and os.path.exists(legacy_doc) else ""
+                )
+            except Exception:
+                self.current_file = ""
 
-            model = data.get("model", "")
+            model = s.get("manifest", {}).get("chat_model", "")
             if model:
                 self.config.chat_model = model
                 self.model_combo.setCurrentText(model)
 
-            lang = data.get("language", "")
+            lang = s.get("language", "")
             if lang:
                 self.config.language = lang
                 set_language(lang)
@@ -450,6 +473,30 @@ class MainWindow(QMainWindow):
             self.status_bar.showMessage(f"{t('loaded')}: {os.path.basename(path)}")
         except Exception as e:
             QMessageBox.warning(self, t("error"), f"{t('failed_load')}: {e}")
+
+    def _make_session(self) -> dict:
+        """Create a fresh v2 session from current GUI config/state."""
+        from clap.core import session as session_mod
+
+        s = session_mod.new_session(
+            chat_model=self.config.chat_model,
+            embed_model=self.config.embed_model,
+            document=self.current_file,
+            language=self.config.language,
+        )
+        session_mod.ensure_main_branch(s)
+        self.active_branch = session_mod.main_branch(s).get("id")
+        return s
+
+    def _refresh_view(self):
+        """Refresh the linear view to the active branch's own messages."""
+        from clap.core import session as session_mod
+
+        if self.session is None:
+            return
+        bid = self.active_branch or session_mod.main_branch(self.session).get("id")
+        self.active_branch = bid
+        self.messages = session_mod.branch_path(self.session, bid)
 
     def export_chat_to_markdown(self):
         """Export conversation to a markdown file."""
@@ -528,7 +575,16 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, t("error"), t("select_model"))
             return
 
-        self.messages.append({"role": "user", "content": text})
+        from clap.core import session as session_mod
+
+        if self.session is None:
+            self.session = self._make_session()
+        parent_id = self.messages[-1].get("id") if self.messages else None
+        session_mod.append_message(
+            self.session, "user", text, parent=parent_id, branch_id=self.active_branch,
+            model=model, provider="ollama-local",
+        )
+        self._refresh_view()
         self.input_edit.clear()
         self._render_messages()
 
@@ -536,8 +592,9 @@ class MainWindow(QMainWindow):
         self.send_btn.setEnabled(False)
         self.status_bar.showMessage(t("thinking"))
 
+        api_messages = [{"role": m.get("role"), "content": m.get("content")} for m in self.messages]
         self.chat_thread = ChatThread(
-            messages=self.messages,
+            messages=api_messages,
             model=model,
             path=self.current_file,
             embed_model=self.config.embed_model,
@@ -565,7 +622,25 @@ class MainWindow(QMainWindow):
         """Handle chat completion."""
         self.send_btn.setEnabled(True)
         if self.current_response:
-            self.messages.append({"role": "assistant", "content": self.current_response})
+            from clap.core import session as session_mod
+
+            meta = {}
+            if self.chat_thread is not None:
+                meta = dict(getattr(self.chat_thread, "last_meta", {}) or {})
+            parent_id = self.messages[-1].get("id") if self.messages else None
+            session_mod.append_message(
+                self.session if self.session is not None else self._make_session(),
+                "assistant",
+                self.current_response,
+                parent=parent_id,
+                branch_id=self.active_branch,
+                model=meta.get("model") or self.config.chat_model,
+                provider=meta.get("provider") or "ollama-local",
+                latency_ms=meta.get("latency_ms") if meta.get("latency_ms") is not None else None,
+                tokens=meta.get("tokens"),
+                error=meta.get("error"),
+            )
+            self._refresh_view()
         self.current_response = ""
         self.status_bar.showMessage(t("ready"))
         self.save_history()
@@ -651,6 +726,8 @@ class MainWindow(QMainWindow):
 
             if 0 <= idx < len(history):
                 session = history[idx]
+                self.session = None  # history.json is flat; rebuild on save
+                self.active_branch = None
                 self.messages = session.get("messages", [])
                 self.current_file = session.get("document", "")
                 model = session.get("model", "")

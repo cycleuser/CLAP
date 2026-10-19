@@ -4,7 +4,7 @@ A local LLM conversation tool with Ollama, featuring RAG, document import,
 and dual-panel display.
 """
 
-__version__ = "1.0.0"
+__version__ = "2.0.0"
 __author__ = "Frederick"
 __email__ = "wedonotuse@outlook.com"
 

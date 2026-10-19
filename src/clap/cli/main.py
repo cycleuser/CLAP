@@ -5,13 +5,14 @@ import sys
 
 import ollama
 
+from clap import __version__
 from clap.core.knowledge_base import KnowledgeBase
 
 
 def main():
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(prog="clap", description="CLAP - Chat Local And Persistent")
-    parser.add_argument("-V", "--version", action="version", version="clap-llm 1.0.0")
+    parser.add_argument("-V", "--version", action="version", version=f"clap-llm {__version__}")
     subparsers = parser.add_subparsers(dest="cmd")
 
     chat_p = subparsers.add_parser("chat", help="Chat with LLM")
