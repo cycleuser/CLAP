@@ -73,6 +73,17 @@ Examples:
     tree_p = sp.add_parser("tree", help="Show branches and their paths (F2)")
     tree_p.add_argument("file", help=".clap file")
 
+    replay_p = sp.add_parser("replay", help="Whole-replay a branch with a model (F3)")
+    replay_p.add_argument("file", help=".clap file")
+    replay_p.add_argument("--branch", default=None, help="Branch id (default main)")
+    replay_p.add_argument("--model", default=None, help="Model for replay (default branch/manifest)")
+    replay_p.add_argument("--provider", default=None, help="Provider id (default ollama-local)")
+    replay_p.add_argument("--log", default=None, help="Replay log path (jsonl); default <stem>.replay.jsonl")
+    replay_p.add_argument("--context", choices=["replayed", "original"], default="replayed")
+    replay_p.add_argument("--to-turn", type=int, default=None)
+    replay_p.add_argument("--from-turn", type=int, default=None, dest="force_from")
+    replay_p.add_argument("--fresh", action="store_true", help="Ignore existing log, start over")
+
     return parser
 
 
@@ -98,6 +109,8 @@ def main(argv=None):
         return fork_command(args)
     elif args.command == "tree":
         return tree_command(args)
+    elif args.command == "replay":
+        return replay_command(args)
     return interactive_mode()
 
 
@@ -266,6 +279,72 @@ def tree_command(args):
             ann_note = f" [{len(ann)} ann]" if ann else ""
             print(f"    {m['id']:<6} {m.get('role', '?'):<9} {prev}{ann_note}")
     return 0
+
+
+# ------------------------------------------------------------------ F3
+
+
+def replay_command(args):
+    """Whole-replay a branch with a chosen provider/model (F3)."""
+    import os
+
+    from clap.core import replay as replay_mod
+    from clap.core import session as session_mod
+    from clap.core.providers import (
+        FallbackRouter,
+        discover_providers,
+        provider_from_names,
+    )
+
+    log_path = args.log or os.path.splitext(args.file)[0] + ".replay.jsonl"
+    if args.fresh and os.path.exists(log_path):
+        os.remove(log_path)
+
+    try:
+        s = session_mod.load_session(args.file)
+        man = s.get("manifest", {})
+        privacy = bool(man.get("privacy_mode", True))
+
+        registry = discover_providers()
+        try:
+            primary = provider_from_names(registry, args.provider)
+        except Exception as e:
+            print(f"Error: {e}")
+            return 1
+        local = registry.get("ollama-local")
+        router = FallbackRouter(primary, local, privacy_mode=privacy)
+
+        summary = replay_mod.replay_to_log(
+            args.file,
+            router,
+            log_path=log_path,
+            branch_id=args.branch,
+            model=args.model,
+            context_mode=args.context,
+            to_turn=args.to_turn,
+            append=not args.fresh,
+            force_from=args.force_from,
+        )
+        for ev in router.events:
+            session_mod._add_history(s, ev["event"], ev.get("detail"))
+
+        print(
+            f"Replay summary: total={summary['total_turns']} completed={summary['completed_turns']}"
+            f" resumed_from={summary.get('resumed_from')} branch={summary['branch']}"
+            f" model={summary['model']} log={summary['log']}"
+        )
+        for ev in router.events:
+            print(f"  routing event: {ev['event']} {ev.get('detail', {})}")
+        if router.events:
+            # persist provider switches into the session's evidence chain
+            session_mod.save_session(s, args.file)
+        return 0
+    except KeyboardInterrupt:
+        print("\nReplay interrupted; completed turns are in the log (checkpoint=last completed turn).")
+        return 130
+    except Exception as e:
+        print(f"Error: {e}")
+        return 1
 
 
 def start_gui():
