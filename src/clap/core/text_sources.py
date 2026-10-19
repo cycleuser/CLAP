@@ -155,7 +155,7 @@ class TextLibrary:
     def read(self, name: str) -> str:
         p = self._find(name)
         if p is None:
-            raise KeyError(f"未找到文本资料：{name}")
+            raise KeyError(f"文本资料不存在或已被删除：{name}")
         key = str(p)
         with self._lock:
             if key in self._cache:

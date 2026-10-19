@@ -85,13 +85,10 @@
       <section class="panel card">
         <h2><span data-i18n="session.heading">会话</span> <span class="hint" data-i18n="session.hint">v2 · 分支 · 标注</span></h2>
         <dl class="kv" id="sess-kv"></dl>
-        <div class="field" style="margin-top:10px">
-          <label for="sess-path" data-i18n="session.savePath">保存 / 加载路径（.clap 文件）</label>
-          <input id="sess-path" placeholder="/absolute/path/session.clap">
-        </div>
-        <div class="composer-row">
-          <button class="btn ghost small" id="save-sess" data-i18n="session.save">保存</button>
-          <button class="btn ghost small" id="load-sess" data-i18n="session.load">加载</button>
+        <div class="composer-row" style="margin-top:10px">
+          <button class="btn ghost small" id="download-sess" data-i18n="session.download">下载 .clap</button>
+          <label class="btn ghost small" for="load-file" data-i18n="session.loadFile">加载文件</label>
+          <input type="file" id="load-file" accept=".clap,application/json" style="display:none">
         </div>
       </section>
 
@@ -133,7 +130,7 @@
           </div>
           <div class="composer-row">
             <button class="btn small" type="submit" data-i18n="annotate.submit">写入标注</button>
-            <button class="btn ghost small" type="button" id="ann-export" data-i18n="annotate.exportCsv">导出 CSV</button>
+            <button class="btn ghost small" type="button" id="ann-export" data-i18n="annotate.download">下载 CSV</button>
           </div>
         </form>
         <div class="ann-list" id="ann-list"></div>
@@ -237,21 +234,30 @@
 
   // ---------------- citations ----------------
   const CITE_RE = /\[(\d+(?:\s*[,，]\s*\d+)*)\]/g;
-  function renderRich(node, text) {
+  function renderRich(node, text, msg) {
     node.innerHTML = esc(text).replace(CITE_RE, (m, nums) => {
       return '<span class="cite" data-n="' + esc(nums) + '" title="' + esc(T("msg.citeTitle")) + '">[' + esc(nums) + ']</span>';
     });
     node.querySelectorAll(".cite").forEach((c) => {
-      c.addEventListener("click", () => openSourceByNumber(c.dataset.n, c.dataset.q || lastQuestion));
+      c.addEventListener("click", () => openSourceByNumber(c.dataset.n, c.dataset.q || lastQuestion, msg));
     });
   }
 
-  function openSourceByNumber(nums, question) {
-    const n = String(nums).split(",")[0].trim();
-    const msg = lastMessages.find((m) => (m.sources || []).some((s) => String(s.n) === n));
-    const src = msg && (msg.sources || []).find((s) => String(s.n) === n);
-    if (!src) { toast(T("drawer.notFound", { n: n })); return; }
-    openSource(src.kind || "zim", src.zim, src.path, src.title, question || "");
+  function sourceKind(src) {
+    if (!src) return "zim";
+    if (src.kind) return src.kind;
+    // older sessions have no `kind`: absolute paths belong to the text library
+    return String(src.path || "").startsWith("/") ? "text" : "zim";
+  }
+
+  function openSourceByNumber(nums, question, msg) {
+    const wanted = String(nums).split(/[,，]/).map((s) => s.trim());
+    // resolve inside the answer that owns the citation — numbers restart per
+    // answer, so a global lookup can hit an unrelated (or deleted) source
+    const src = msg && (msg.sources || []).find((s) => wanted.includes(String(s.n)));
+    if (!src) { toast(T("drawer.notFound", { n: wanted[0] })); return; }
+    if (src.exists === false) { toast(T("drawer.missing")); return; }
+    openSource(sourceKind(src), src.zim, src.path, src.title, question || "");
   }
   async function openSource(kind, zim, path, title, question) {
     const drawer = $("drawer");
@@ -483,10 +489,10 @@
     if (m.html) {
       bubble.innerHTML = m.html;
       bubble.querySelectorAll(".cite").forEach((c) => {
-        c.addEventListener("click", () => openSourceByNumber(c.dataset.n, c.dataset.q || lastQuestion));
+        c.addEventListener("click", () => openSourceByNumber(c.dataset.n, c.dataset.q || lastQuestion, m));
       });
     } else {
-      renderRich(bubble, m.content || "");
+      renderRich(bubble, m.content || "", m);
     }
     wrap.appendChild(bubble);
     if (m.error && m.error !== "cancelled") wrap.appendChild(el("div", "err-text", T("chat.callFailed") + m.error));
@@ -511,8 +517,12 @@
         const label = "[" + s.n + "] " + (s.title || s.path);
         const b = el("button", "src-btn", label.length > 34 ? label.slice(0, 34) + "…" : label);
         b.type = "button";
-        b.title = s.zim + " · " + s.path;
-        b.addEventListener("click", () => openSource(s.kind || "zim", s.zim, s.path, s.title, lastQuestion));
+        b.title = s.exists === false ? T("drawer.missing") : (s.zim + " · " + s.path);
+        if (s.exists === false) b.style.opacity = ".5";
+        b.addEventListener("click", () => {
+          if (s.exists === false) { toast(T("drawer.missing")); return; }
+          openSource(sourceKind(s), s.zim, s.path, s.title, lastQuestion);
+        });
         ev.appendChild(b);
       });
       wrap.appendChild(ev);
@@ -810,63 +820,52 @@
     [["md", T("export.markdown")], ["html", T("export.html")], ["json", T("export.json")]].forEach(([v, tx]) => {
       const o = document.createElement("option"); o.value = v; o.textContent = tx; sel.appendChild(o);
     });
-    const path = document.createElement("input");
-    path.placeholder = T("export.pathPlaceholder");
-    path.style.cssText = "flex:1;min-width:220px;font:inherit;padding:7px 10px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink)";
-    const pre = el("pre", "");
-    pre.textContent = T("export.hint");
-    row.appendChild(sel); row.appendChild(path);
+    row.appendChild(sel);
     wrap.appendChild(row);
-    wrap.appendChild(pre);
+    const note = el("p", "muted", T("export.downloadHint"));
+    note.style.marginTop = "10px";
+    wrap.appendChild(note);
 
-    const gen = el("button", "btn small", T("common.generate"));
-    gen.type = "button";
-    gen.addEventListener("click", async () => {
-      gen.disabled = true;
-      try {
-        const r = await fetch("/api/session/export", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ format: sel.value, branch: branchId || undefined, path: path.value.trim() || undefined })
-        });
-        const j = await r.json();
-        if (!j.success) throw new Error(j.error || T("export.failed"));
-        pre.textContent = j.content || (T("chat.saved", { path: j.path }));
-        toast(j.path ? T("chat.saved", { path: j.path }) : T("export.generated", { n: j.chars }));
-      } catch (e) {
-        pre.textContent = T("export.failed") + e.message;
-      } finally {
-        gen.disabled = false;
-      }
+    const dl = el("button", "btn small", T("export.download"));
+    dl.type = "button";
+    dl.addEventListener("click", () => {
+      const q = "?format=" + encodeURIComponent(sel.value) +
+        (branchId ? "&branch=" + encodeURIComponent(branchId) : "");
+      window.location.href = "/api/session/export/download" + q;
+      toast(T("session.downloaded"));
     });
     const copy = el("button", "btn ghost small", T("common.copy"));
     copy.type = "button";
     copy.addEventListener("click", async () => {
-      try { await navigator.clipboard.writeText(pre.textContent); toast(T("export.copied")); }
-      catch (e) { toast(T("export.copyFailed") + e.message); }
+      try {
+        const r = await fetch("/api/session/export", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ format: sel.value, branch: branchId || undefined })
+        });
+        const j = await r.json();
+        if (!j.success) throw new Error(j.error || T("export.failed"));
+        await navigator.clipboard.writeText(j.content || "");
+        toast(T("export.copied"));
+      } catch (e) {
+        toast(T("export.copyFailed") + e.message);
+      }
     });
-    openModal(T("export.title"), wrap, [copy, gen]);
+    openModal(T("export.title"), wrap, [copy, dl]);
   });
 
-  $("btn-share").addEventListener("click", async () => {
-    try {
-      const r = await fetch("/api/session/share", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: "{}"
-      });
-      const j = await r.json();
-      if (!j.success) throw new Error(j.error || T("share.failed"));
-      const box = el("div", "");
-      box.appendChild(el("p", "", T("share.intro")));
-      const pre = el("pre", ""); pre.textContent = j.package + "\n" + (j.size || 0) + " bytes";
-      box.appendChild(pre);
-      const note = el("p", "", T("share.note"));
-      note.style.cssText = "color:var(--ink-soft);font-size:14px;margin-top:8px";
-      box.appendChild(note);
-      openModal(T("share.title"), box, []);
-      toast(T("share.done"));
-    } catch (e) {
-      setStatus(T("share.failed") + e.message, true);
-    }
+  $("btn-share").addEventListener("click", () => {
+    const box = el("div", "");
+    box.appendChild(el("p", "", T("share.intro")));
+    const note = el("p", "muted", T("share.downloadHint"));
+    note.style.marginTop = "8px";
+    box.appendChild(note);
+    const dl = el("button", "btn small", T("share.download"));
+    dl.type = "button";
+    dl.addEventListener("click", () => {
+      window.location.href = "/api/session/share/download";
+      toast(T("session.downloaded"));
+    });
+    openModal(T("share.title"), box, [dl]);
   });
 
   $("btn-renew").addEventListener("click", async () => {
@@ -909,25 +908,26 @@
     }
   }
 
-  $("save-sess").addEventListener("click", async () => {
-    const p = $("sess-path").value.trim();
-    if (!p) { setStatus(T("chat.needSavePath"), true); return; }
-    const r = await fetch("/api/session/save", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: p })
-    });
-    const j = await r.json();
-    setStatus(j.success ? T("chat.saved", { path: j.path }) : T("chat.saveFailed") + j.error, !j.success);
+  $("download-sess").addEventListener("click", () => {
+    window.location.href = "/api/session/download";
+    toast(T("session.downloaded"));
   });
 
-  $("load-sess").addEventListener("click", async () => {
-    const p = $("sess-path").value.trim();
-    if (!p) { setStatus(T("chat.needLoadPath"), true); return; }
-    const r = await fetch("/api/session/load", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: p })
-    });
-    const j = await r.json();
-    setStatus(j.success ? T("chat.loaded", { path: j.path }) : T("chat.loadFailed") + j.error, !j.success);
-    if (j.success) await loadSession();
+  $("load-file").addEventListener("change", async () => {
+    const f = $("load-file").files && $("load-file").files[0];
+    if (!f) return;
+    const fd = new FormData();
+    fd.append("file", f, f.name);
+    try {
+      const r = await fetch("/api/session/upload", { method: "POST", body: fd });
+      const j = await r.json();
+      if (!j.success) throw new Error(j.error || "");
+      toast(T("chat.loaded", { path: f.name }));
+      $("load-file").value = "";
+      await loadSession();
+    } catch (e) {
+      setStatus(T("chat.loadFailed") + e.message, true);
+    }
   });
 
   // ---------------- annotations ----------------
@@ -955,29 +955,19 @@
     }
   });
 
-  $("ann-export").addEventListener("click", async () => {
-    const p = $("sess-path").value.trim();
-    const out = p ? p.replace(/\.clap$/i, "") + ".annotations.csv" : "";
-    if (!out) { setStatus(T("annotate.needSavePath"), true); return; }
-    const r = await fetch("/api/annotate/export", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path: out, format: "csv" })
-    });
-    const j = await r.json();
-    setStatus(j.success ? T("annotate.exported", { n: j.rows, path: j.path }) : T("annotate.exportFailed") + j.error, !j.success);
+  $("ann-export").addEventListener("click", () => {
+    window.location.href = "/api/annotate/download?format=csv";
+    toast(T("annotate.downloaded"));
   });
 
   $("tl-link").addEventListener("click", async (e) => {
     e.preventDefault();
-    let p = $("sess-path").value.trim();
-    if (!p) {
-      p = "/tmp/clap-session-" + Date.now() + ".clap";
-      const r = await fetch("/api/session/save", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: p })
-      });
-      const j = await r.json();
-      if (!j.success) { setStatus(T("timeline.failed") + j.error, true); return; }
-    }
+    const p = "/tmp/clap-session-" + Date.now() + ".clap";
+    const r = await fetch("/api/session/save", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: p })
+    });
+    const j = await r.json();
+    if (!j.success) { setStatus(T("timeline.failed") + j.error, true); return; }
     window.open("/timeline?file=" + encodeURIComponent(p), "_blank", "noopener");
   });
 

@@ -89,6 +89,16 @@ html:not([lang="zh-CN"]):not([lang="en"]) .note-lang { display: block !important
                 <td>保存为 v2 <code>.clap</code>。请求体 <code>{"path"}</code>。</td></tr>
             <tr><td class="method">POST</td><td><code>/api/session/load</code></td>
                 <td>加载 <code>.clap</code>（v1 自动无损迁移）。请求体 <code>{"path"}</code>。</td></tr>
+            <tr><td class="method">GET</td><td><code>/api/session/export/download?format=&amp;branch=</code></td>
+                <td>直接下载当前分支的导出文件（浏览器弹出保存位置）：md / html / json。</td></tr>
+            <tr><td class="method">GET</td><td><code>/api/session/download</code></td>
+                <td>直接下载当前会话为 <code>.clap</code> 文件。</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/session/upload</code></td>
+                <td>从本机选择 <code>.clap</code> 文件加载会话（multipart <code>file</code>）。</td></tr>
+            <tr><td class="method">GET</td><td><code>/api/session/share/download</code></td>
+                <td>直接下载 <code>.clapshare</code> 分享包。</td></tr>
+            <tr><td class="method">GET</td><td><code>/api/annotate/download?format=csv|json</code></td>
+                <td>直接下载标注表。</td></tr>
             <tr><td class="method">POST</td><td><code>/api/session/fork</code></td>
                 <td>在某条消息处分叉。请求体 <code>{"at","name","model","note"}</code>。</td></tr>
             <tr><td class="method">POST</td><td><code>/api/session/export</code></td>
@@ -219,6 +229,16 @@ html:not([lang="zh-CN"]):not([lang="en"]) .note-lang { display: block !important
             <tr><td class="method">POST</td><td><code>/api/session/new</code></td><td>Start an empty session.</td></tr>
             <tr><td class="method">POST</td><td><code>/api/session/save</code></td><td>Save as a v2 <code>.clap</code> file. Body <code>{"path"}</code>.</td></tr>
             <tr><td class="method">POST</td><td><code>/api/session/load</code></td><td>Load a <code>.clap</code> file (v1 files are migrated losslessly). Body <code>{"path"}</code>.</td></tr>
+            <tr><td class="method">GET</td><td><code>/api/session/export/download?format=&amp;branch=</code></td>
+                <td>Download the current branch directly (the browser asks where to save): md / html / json.</td></tr>
+            <tr><td class="method">GET</td><td><code>/api/session/download</code></td>
+                <td>Download the current session as a <code>.clap</code> file.</td></tr>
+            <tr><td class="method">POST</td><td><code>/api/session/upload</code></td>
+                <td>Load a session from a local <code>.clap</code> file (multipart <code>file</code>).</td></tr>
+            <tr><td class="method">GET</td><td><code>/api/session/share/download</code></td>
+                <td>Download a <code>.clapshare</code> package directly.</td></tr>
+            <tr><td class="method">GET</td><td><code>/api/annotate/download?format=csv|json</code></td>
+                <td>Download the annotation table directly.</td></tr>
             <tr><td class="method">POST</td><td><code>/api/session/fork</code></td><td>Fork a branch at a message. Body <code>{"at","name","model","note"}</code>.</td></tr>
             <tr><td class="method">POST</td><td><code>/api/session/export</code></td>
                 <td>Export the current branch. Body <code>{"format":"md|html|json","branch","path"}</code>; returns <code>content</code> and the written <code>path</code>. The HTML export is a single file with no external resources.</td></tr>

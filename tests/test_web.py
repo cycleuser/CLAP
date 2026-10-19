@@ -760,3 +760,82 @@ def test_grounded_chat_includes_text_sources(client, monkeypatch):
     kinds = [s.get("kind") for s in meta["sources"]]
     assert "text" in kinds
     assert any(s["title"] == "notes" for s in meta["sources"])
+
+
+def test_message_view_flags_missing_text_source(tmp_path):
+    existing = tmp_path / "here.txt"
+    existing.write_text("still here", encoding="utf-8")
+    view = webapp._message_view({
+        "role": "assistant",
+        "content": "答案 [1][2][3]",
+        "sources": [
+            {"n": 1, "path": str(existing), "title": "here"},
+            {"n": 2, "path": str(tmp_path / "gone.txt"), "title": "gone"},
+            {"n": 3, "zim": "物理资料MD.zim", "path": "5. Quantum/ch.html", "title": "chapter"},
+        ],
+    })
+    assert view["sources"][0]["kind"] == "text" and view["sources"][0]["exists"] is True
+    assert view["sources"][1]["kind"] == "text" and view["sources"][1]["exists"] is False
+    assert view["sources"][2]["kind"] == "zim" and view["sources"][2]["exists"] is True
+
+
+def test_message_view_infers_kind_for_legacy_sources():
+    view = webapp._message_view({
+        "role": "assistant", "content": "x",
+        "sources": [
+            {"n": 1, "path": "/Users/fred/.clap/text_sources/old.txt", "title": "old"},
+            {"n": 2, "path": "AAAI_2024/paper.html", "title": "paper"},
+        ],
+    })
+    assert view["sources"][0]["kind"] == "text"
+    assert view["sources"][1]["kind"] == "zim"
+
+
+# ---------------------------------------------------------------- downloads
+
+
+def test_download_endpoints_return_attachments(client):
+    _chat(client, {"message": "下载测试"})
+    md = client.get("/api/session/export/download?format=md")
+    assert md.status_code == 200
+    assert "attachment" in md.headers["Content-Disposition"]
+    assert "下载测试" in md.get_data(as_text=True)
+
+    clap = client.get("/api/session/download")
+    assert "attachment" in clap.headers["Content-Disposition"]
+    assert json.loads(clap.get_data(as_text=True))["version"] == "2.0"
+
+    ann = client.get("/api/annotate/download?format=csv")
+    assert "attachment" in ann.headers["Content-Disposition"]
+    assert "text/csv" in ann.content_type
+
+    pkg = client.get("/api/session/share/download")
+    assert pkg.status_code == 200 and pkg.data[:2] == b"PK"
+
+
+def test_session_upload_roundtrip(client):
+    import io
+
+    _chat(client, {"message": "上传测试"})
+    blob = client.get("/api/session/download").data
+    client.post("/api/session/new", json={})
+    assert client.get("/api/session/get").get_json()["messages"] == []
+
+    r = client.post(
+        "/api/session/upload",
+        data={"file": (io.BytesIO(blob), "session.clap")},
+        content_type="multipart/form-data",
+    )
+    assert r.get_json()["success"] is True
+    assert client.get("/api/session/get").get_json()["messages"][0]["content"] == "上传测试"
+
+
+def test_session_upload_rejects_invalid_file(client):
+    import io
+
+    r = client.post(
+        "/api/session/upload",
+        data={"file": (io.BytesIO(b"not json"), "bad.clap")},
+        content_type="multipart/form-data",
+    )
+    assert r.status_code == 400

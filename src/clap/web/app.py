@@ -775,6 +775,20 @@ def _message_view(m: dict) -> dict:
         )
     except Exception:
         view["html"] = MD.render_plain(content)
+    # flag deleted text evidence so the UI can disable the chip instead of
+    # throwing a raw "file not found" when it is clicked
+    sources = []
+    for src in m.get("sources") or []:
+        row = dict(src)
+        kind = row.get("kind") or ("text" if str(row.get("path") or "").startswith("/") else "zim")
+        row["kind"] = kind
+        if kind == "text":
+            row["exists"] = bool(row.get("path")) and Path(str(row["path"])).exists()
+        else:
+            row["exists"] = True
+        sources.append(row)
+    if sources:
+        view["sources"] = sources
     return view
 
 
@@ -951,6 +965,90 @@ def api_annotate():
     except Exception as e:
         return jsonify({"success": False, "error": _scrub(str(e), get_registry())}), 400
     return jsonify({"success": True, "annotation": ann, "count": len(s.get("annotations", []))})
+
+
+@app.route("/api/session/export/download")
+def api_session_export_download():
+    """Direct download of a branch export (the browser asks where to save)."""
+    fmt = (request.args.get("format") or "md").lower()
+    branch = request.args.get("branch") or None
+    s = current_session()
+    try:
+        content, _ = EXP.export(s, fmt=fmt, branch_id=branch)
+    except Exception as e:
+        return jsonify({"success": False, "error": _scrub(str(e), get_registry())}), 400
+    ext = "md" if fmt in ("md", "markdown") else fmt
+    mime = {"md": "text/markdown; charset=utf-8", "html": "text/html; charset=utf-8", "json": "application/json; charset=utf-8"}.get(
+        ext, "text/plain; charset=utf-8"
+    )
+    name = f"clap-session-{s['manifest']['session_id']}.{ext}"
+    return Response(content, content_type=mime, headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+@app.route("/api/session/download")
+def api_session_download():
+    """Download the current session as a `.clap` file."""
+    s = current_session()
+    data = json.dumps(s, ensure_ascii=False, indent=2)
+    name = f"{s['manifest']['session_id']}.clap"
+    return Response(
+        data,
+        content_type="application/json; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{name}"'},
+    )
+
+
+@app.route("/api/session/upload", methods=["POST"])
+def api_session_upload():
+    """Load a session from an uploaded `.clap` file (file picker)."""
+    upload = request.files.get("file")
+    if upload is None:
+        return jsonify({"success": False, "error": "没有收到文件"}), 400
+    try:
+        data = json.load(upload.stream)
+        s = SM.normalize(data)
+        SM.assert_valid(s)
+    except Exception as e:
+        return jsonify({"success": False, "error": _scrub(f"无法加载：{e}", get_registry())}), 400
+    set_session(s)
+    return jsonify({"success": True, "session_id": s["manifest"]["session_id"]})
+
+
+@app.route("/api/session/share/download")
+def api_session_share_download():
+    """Build a share package in memory and download it."""
+    import tempfile
+
+    s = current_session()
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td) / f"{s['manifest']['session_id']}.clap"
+            SM.save_session(s, tmp)
+            pkg = SH.pack(tmp, out_dir=td)
+            data = pkg.read_bytes()
+    except Exception as e:
+        return jsonify({"success": False, "error": _scrub(str(e), get_registry())}), 400
+    name = f"{s['manifest']['session_id']}.clapshare"
+    return Response(
+        data,
+        content_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{name}"'},
+    )
+
+
+@app.route("/api/annotate/download")
+def api_annotate_download():
+    """Download annotations as CSV or JSON."""
+    s = current_session()
+    fmt = (request.args.get("format") or "csv").lower()
+    if fmt == "json":
+        content = json.dumps(SM.annotation_rows(s), ensure_ascii=False, indent=2)
+        mime, ext = "application/json; charset=utf-8", "json"
+    else:
+        content = SM.annotations_csv(s)
+        mime, ext = "text/csv; charset=utf-8", "csv"
+    name = f"{s['manifest']['session_id']}.annotations.{ext}"
+    return Response(content, content_type=mime, headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
 @app.route("/api/annotate/export", methods=["POST"])
