@@ -62,8 +62,8 @@
   },
   {
    "providerID": "cycleuser-strata",
-   "modelID": "strata",
-   "name": "Strata (strata-iq3-xxs)"
+   "modelID": "strata-iq2-xs",
+   "name": "Strata (strata-iq2-xs)"
   },
   {
    "providerID": "deepseek",
